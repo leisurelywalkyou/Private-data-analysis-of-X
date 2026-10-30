@@ -1,0 +1,14 @@
+{
+  "username": "",
+  "bearer_token": "",
+  "user_access_token": "",
+  "timezone": "Asia/Shanghai",
+  "collect_interval_minutes": 30,
+  "track_recent_days": 7,
+  "max_snapshot_tweets": 200,
+  "exclude_retweets": true,
+  "exclude_replies": false,
+  "data_dir": "data",
+  "report_days": 30,
+  "report_dir": "reports"
+}
