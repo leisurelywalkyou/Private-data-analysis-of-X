@@ -1,0 +1,168 @@
+{
+  "timezone": "Asia/Shanghai",
+  "data_dir": "data",
+  "report_days": 30,
+  "report_dir": "reports",
+  "collect_interval_minutes": 30,
+  "max_consecutive_failures": 3,
+  "cooldown_minutes": 60,
+  "browser": {
+    "channel": "auto"
+  },
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 3,
+        "max_requests_per_minute": 20
+      }
+    },
+    "instagram": {
+      "enabled": false,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 5,
+        "max_requests_per_minute": 20
+      }
+    },
+    "xiaohongshu": {
+      "enabled": false,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 6,
+        "max_requests_per_minute": 15
+      }
+    },
+    "weibo": {
+      "enabled": false,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 3,
+        "max_requests_per_minute": 20
+      }
+    },
+    "pixiv": {
+      "enabled": false,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 2,
+        "max_requests_per_minute": 30
+      }
+    },
+    "tiktok": {
+      "enabled": false,
+      "account_name": "",
+      "platform_user_id": "",
+      "session_id": "",
+      "cookies": "",
+      "use_browser_cookies": false,
+      "max_posts": 50,
+      "timeout": 20,
+      "filters": {
+        "include_keywords": [],
+        "exclude_keywords": [],
+        "exclude_reposts": false,
+        "only_changed": false
+      },
+      "retry": {
+        "max_attempts": 4,
+        "backoff_seconds": 2,
+        "backoff_max_seconds": 60
+      },
+      "rate_limit": {
+        "min_interval_seconds": 5,
+        "max_requests_per_minute": 20
+      }
+    }
+  },
+  "pet": {
+    "x": null,
+    "y": null
+  }
+}

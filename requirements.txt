@@ -1,0 +1,4 @@
+requests>=2.28
+
+# 浏览器登录（可选）：读取本人会话锚点；本机已装 Chrome/Edge 时无需下载浏览器
+playwright>=1.40

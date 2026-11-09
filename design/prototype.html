@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>x 观测台 · 界面优化原型</title>
+<link rel="stylesheet" href="./prototype.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ 左栏 ============ -->
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-eyebrow">Observe · Ledger</div>
+      <div class="brand-title">x 观测台</div>
+      <div class="brand-sub">六平台 · 本地 CSV · 无数据库</div>
+    </div>
+
+    <nav class="nav" id="nav" aria-label="主导航">
+      <button class="nav-item" data-page="overview">
+        <span class="nav-idx">01</span><span class="nav-label">观测台</span><span class="nav-badge" id="navBadgeRuns"></span>
+      </button>
+      <button class="nav-item" data-page="runs">
+        <span class="nav-idx">02</span><span class="nav-label">运行监控</span>
+      </button>
+      <button class="nav-item" data-page="analysis">
+        <span class="nav-idx">03</span><span class="nav-label">数据分析</span>
+      </button>
+      <button class="nav-item" data-page="reports">
+        <span class="nav-idx">04</span><span class="nav-label">评估报告</span>
+      </button>
+      <button class="nav-item" data-page="settings">
+        <span class="nav-idx">05</span><span class="nav-label">设置</span>
+      </button>
+    </nav>
+
+    <div class="rail-scope">
+      <div class="rail-label">平台范围</div>
+      <div id="scopeList" class="scope-list"></div>
+    </div>
+
+    <div class="rail-foot">
+      <label class="switch-row">
+        <span>自动采集</span>
+        <span class="switch"><input type="checkbox" id="autoToggle" checked><i></i></span>
+      </label>
+      <div class="interval-row">
+        <input id="intervalInput" type="text" value="30" inputmode="numeric" aria-label="采集间隔分钟">
+        <span>分钟 / 轮</span>
+      </div>
+      <div class="rail-meta">数据目录 · data/platforms/</div>
+    </div>
+  </aside>
+
+  <!-- ============ 内容区 ============ -->
+  <main class="work">
+    <header class="topbar">
+      <div class="crumb" id="crumb">观测台 <span>/</span> 01 · OVERVIEW</div>
+      <div class="top-actions">
+        <span class="status-chip" id="globalStatus"><i class="dot ok"></i><b>就绪</b></span>
+        <button class="text-btn" id="wireBtn" title="切换线框模式">线框</button>
+        <button class="text-btn" id="notesBtn" title="查看本页改动说明">改动说明</button>
+        <button class="text-btn" id="refreshBtn" title="刷新数据">刷新</button>
+      </div>
+    </header>
+
+    <div class="viewport" id="viewport">
+
+      <!-- ---------- 01 观测台 ---------- -->
+      <section class="page" id="page-overview">
+        <div class="page-head">
+          <div>
+            <div class="kicker">01 · Overview</div>
+            <h2>账号数据观测</h2>
+            <p class="lede" id="ovLede">—</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" data-act="collect-one">采集当前</button>
+            <button class="btn" data-act="collect-all">采集全部</button>
+            <button class="btn" data-act="make-report">生成报告</button>
+            <button class="text-btn" data-act="go-settings">设置</button>
+          </div>
+        </div>
+
+        <div class="banner" id="ovBanner" hidden>
+          <i class="banner-mark">!</i>
+          <div><b id="ovBannerTitle">提示</b><span id="ovBannerText"></span></div>
+          <button class="btn btn-small" id="ovBannerAct">去处理</button>
+        </div>
+
+        <div class="account-strip" id="accountStrip"></div>
+
+        <div class="stat-layout">
+          <div class="band" id="stockBand"></div>
+          <div class="beat" id="beatBand"></div>
+        </div>
+
+        <div class="card table-card">
+          <div class="card-head">
+            <div class="card-title">
+              <h3>帖子流水</h3>
+              <span class="card-meta" id="postCount">—</span>
+            </div>
+            <div class="table-tools">
+              <div class="search">
+                <input id="postSearch" type="search" placeholder="搜索内容…" aria-label="搜索帖子内容">
+              </div>
+              <span class="tool-hint" id="metricHint">—</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl" id="postTable">
+              <thead id="postHead"></thead>
+              <tbody id="postBody"></tbody>
+            </table>
+            <div class="empty" id="postEmpty" hidden>
+              <div class="empty-art" aria-hidden="true">
+                <svg viewBox="0 0 120 82" width="120" height="82">
+                  <rect x="14" y="10" width="92" height="62" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="14" y1="26" x2="106" y2="26" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="30" y1="38" x2="90" y2="38" stroke="currentColor" stroke-width="1" opacity=".6"/>
+                  <line x1="30" y1="48" x2="82" y2="48" stroke="currentColor" stroke-width="1" opacity=".6"/>
+                  <line x1="30" y1="58" x2="76" y2="58" stroke="currentColor" stroke-width="1" opacity=".6"/>
+                  <circle cx="96" cy="60" r="15" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="107" y1="71" x2="116" y2="79" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+              </div>
+              <div class="empty-title" id="emptyTitle">还没有帖子数据</div>
+              <div class="empty-sub" id="emptySub">按下面三步走，数据会长期累积到本地 CSV。</div>
+              <div class="empty-steps" id="emptySteps">
+                <span><b>01</b> 填写账号与会话锚点</span>
+                <span><b>02</b> 点「采集当前」跑一轮</span>
+                <span><b>03</b> 生成报告并持续观察</span>
+              </div>
+              <button class="btn btn-primary" id="emptyAct">去设置账号</button>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span>双击行或按 ↵ 打开原帖</span>
+            <span id="tableFootNote">仅展示最近 200 条 · 缺失指标显示 —</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 02 运行监控 ---------- -->
+      <section class="page" id="page-runs" hidden>
+        <div class="page-head">
+          <div>
+            <div class="kicker">02 · Runs</div>
+            <h2>运行监控</h2>
+            <p class="lede">调度器发出的事件在这里落地：本轮进度、平台状态、冷却倒计时与失败原因。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" data-act="collect-all">立即采集全部</button>
+            <button class="text-btn" data-act="go-settings">去设置账号</button>
+          </div>
+        </div>
+
+        <div class="run-banner" id="runBanner">
+          <div class="run-banner-left">
+            <span class="run-state" id="runState">等待下一轮</span>
+            <span class="run-sub" id="runSub">下次 20:10 · 间隔 30 分钟</span>
+          </div>
+          <div class="run-progress" id="runProgress"></div>
+        </div>
+
+        <div class="run-grid" id="runCards"></div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">
+              <h3>事件日志</h3>
+              <span class="card-meta">scheduler.poll() · 本轮 4 条</span>
+            </div>
+            <div class="table-tools">
+              <div class="seg" id="logFilter">
+                <button class="seg-btn active" data-level="all">全部</button>
+                <button class="seg-btn" data-level="ERR">错误</button>
+                <button class="seg-btn" data-level="WARN">跳过</button>
+              </div>
+              <button class="text-btn" id="clearLog">清空</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl log-tbl">
+              <thead><tr><th style="width:96px">时间</th><th style="width:76px">级别</th><th style="width:120px">平台</th><th>说明</th></tr></thead>
+              <tbody id="logBody"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span>失败类型与 http.py 对齐：login / challenge / rate_limit</span><span>记录写入 runs.csv</span></div>
+        </div>
+      </section>
+
+      <!-- ---------- 03 数据分析 ---------- -->
+      <section class="page" id="page-analysis" hidden>
+        <div class="page-head">
+          <div>
+            <div class="kicker">03 · Analysis</div>
+            <h2>数据分析</h2>
+            <p class="lede">与 reports/&lt;平台&gt;/latest.html 同一口径，先看结论，再决定是否导出。</p>
+          </div>
+          <div class="page-actions">
+            <div class="seg" id="rangeSeg">
+              <button class="seg-btn" data-days="7">7 天</button>
+              <button class="seg-btn active" data-days="30">30 天</button>
+              <button class="seg-btn" data-days="90">90 天</button>
+            </div>
+            <button class="btn" data-act="open-report">浏览器查看完整报告 ↗</button>
+          </div>
+        </div>
+
+        <div class="kpi-strip" id="analysisKpi"></div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><h3>星期 × 小时互动热力图</h3><span class="card-meta">Weekly × Hourly</span></div>
+            <div class="peak" id="peakNote">—</div>
+          </div>
+          <div class="heat" id="heatmap"></div>
+          <div class="heat-legend">
+            <span>低</span><span class="heat-bar"></span><span>高</span>
+            <span class="heat-note">30 分钟快照差分 · 本地时段 · 空白为未采集</span>
+          </div>
+        </div>
+
+        <div class="chart-grid">
+          <div class="card"><div class="card-head"><div class="card-title"><h3>每日互动增益</h3><span class="card-meta">Daily Engagement</span></div></div><div class="chart" id="chartDailyEng"></div></div>
+          <div class="card"><div class="card-head"><div class="card-title"><h3>每日浏览增益</h3><span class="card-meta">Daily Impressions</span></div></div><div class="chart" id="chartDailyImp"></div></div>
+        </div>
+        <div class="chart-grid">
+          <div class="card"><div class="card-head"><div class="card-title"><h3>每小时平均互动</h3><span class="card-meta">Hourly Average · Per Day</span></div></div><div class="chart" id="chartHourly"></div></div>
+          <div class="card"><div class="card-head"><div class="card-title"><h3>Top 3 帖子累计互动</h3><span class="card-meta">Post Growth · Cumulative</span></div></div><div class="chart" id="chartGrowth"></div></div>
+        </div>
+        <p class="caption">口径：区间 <b id="capRange">—</b> · 有效采集 <b id="capDays">—</b> 天 · 数据源 posts.csv / snapshots-YYYY-MM.csv</p>
+      </section>
+
+      <!-- ---------- 04 评估报告 ---------- -->
+      <section class="page" id="page-reports" hidden>
+        <div class="page-head">
+          <div>
+            <div class="kicker">04 · Reports</div>
+            <h2>评估报告</h2>
+            <p class="lede">生成、回看、对比、打开，四件事在同一页完成；HTML 仍是唯一可导出产物。</p>
+          </div>
+        </div>
+
+        <div class="card gen-card">
+          <div class="gen-info">
+            <div class="gen-title">为 <b id="genPlatform">X</b> 生成报告</div>
+            <div class="gen-meta" id="genMeta">回看 30 天 · 输出 reports/x/ · 最近一次 11-07 19:40</div>
+          </div>
+          <div class="gen-actions">
+            <button class="btn btn-primary" data-act="generate-report">生成并预览</button>
+            <button class="btn" data-act="open-report">打开最新报告 ↗</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><h3>历史报告</h3><span class="card-meta" id="reportCount">—</span></div>
+            <span class="tool-hint">扫描 reports/&lt;平台&gt;/report_*.html</span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead><tr><th style="width:130px">生成时间</th><th style="width:80px">区间</th><th style="width:80px">帖子</th><th style="width:96px">互动</th><th style="width:80px">大小</th><th>操作</th></tr></thead>
+              <tbody id="reportBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="report-grid">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><h3>报告结构</h3><span class="card-meta">与 latest.html 同构</span></div></div>
+            <ol class="plate-list">
+              <li><span>01</span> 星期 × 小时互动热力图</li>
+              <li><span>02</span> 每日互动增益曲线</li>
+              <li><span>03</span> 每日浏览增益曲线</li>
+              <li><span>04</span> 每小时平均互动增益</li>
+              <li><span>05</span> Top 3 帖子累计互动曲线</li>
+            </ol>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><h3>报告预览</h3><span class="card-meta">应用内简化版</span></div><button class="text-btn" data-act="preview-report">放大预览</button></div>
+            <div class="report-mock" id="reportMock"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 05 设置 ---------- -->
+      <section class="page" id="page-settings" hidden>
+        <div class="page-head">
+          <div>
+            <div class="kicker">05 · Settings</div>
+            <h2>采集设置</h2>
+            <p class="lede">账号、会话锚点与调度；凭据只写入本机 config.json，不新增字段。</p>
+          </div>
+          <div class="page-actions">
+            <span class="secure-note">凭据仅保存在本机 · 请勿分享 config.json</span>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="plat-list" id="settingsPlat"></div>
+
+          <div class="settings-form" id="settingsForm">
+            <div class="sec-head"><span class="sec-idx">01</span><h3>平台与账号</h3><span class="sec-note">未启用的平台不参与调度</span></div>
+            <div class="form-row flags">
+              <label class="switch-row"><span>启用该平台</span><span class="switch"><input type="checkbox" id="fEnabled" checked><i></i></span></label>
+              <span class="badge-setup" id="fSetupState">会话有效</span>
+            </div>
+            <div class="form-grid three">
+              <label class="field"><span>账号名称（不含 @）</span><input id="fAccount" type="text" value=""></label>
+              <label class="field"><span>平台用户 ID（仅小红书 / 微博 / pixiv 必填）</span><input id="fUid" type="text" value=""></label>
+              <label class="field"><span>每轮上限（1–200）</span><input id="fMaxPosts" type="text" value="50"><em class="field-err" id="fMaxErr" hidden>需为 1–200 的整数</em></label>
+            </div>
+
+            <div class="sec-head"><span class="sec-idx">02</span><h3>会话与凭据</h3><span class="sec-note">只保存锚点，不注入脚本</span></div>
+            <label class="field"><span>会话锚点 · <b id="fAnchorName">auth_token</b></span>
+              <div class="inline-input"><input id="fSession" type="password" value=""><button class="text-btn" id="revealBtn" type="button">显示</button></div>
+            </label>
+            <div class="inline-actions">
+              <button class="btn btn-small" data-act="browser-login">浏览器登录</button>
+              <span class="tool-hint" id="sessionHint">未读取 · 首次使用需 pip install playwright</span>
+            </div>
+            <p class="tool-hint">X 的 ct0、TikTok 的 tt_chain_token 由程序自动获取，无需填写。</p>
+
+            <div class="sec-head"><span class="sec-idx">03</span><h3>过滤规则</h3><span class="sec-note">留空表示不过滤</span></div>
+            <div class="form-grid two">
+              <label class="field"><span>标题 / 正文包含词</span><input id="fInclude" type="text" placeholder="逗号分隔，如：手绘, 教程"></label>
+              <label class="field"><span>排除词</span><input id="fExclude" type="text" placeholder="逗号分隔"></label>
+            </div>
+            <div class="form-row flags">
+              <label class="switch-row"><span>排除转发</span><span class="switch"><input type="checkbox" id="fExcludeReposts"><i></i></span></label>
+              <label class="switch-row"><span>只保留相对上次抓取有变化的帖子</span><span class="switch"><input type="checkbox" id="fOnlyChanged"><i></i></span></label>
+            </div>
+
+            <div class="sec-head"><span class="sec-idx">04</span><h3>调度与策略</h3><span class="sec-note">只读 · 来自 config.json</span></div>
+            <label class="field narrow"><span>采集间隔（5–240 分钟）</span><input id="fInterval" type="text" value="30"><em class="field-err" id="fIntervalErr" hidden>需为 5–240 的整数</em></label>
+            <div class="readonly-rows" id="policyRows"></div>
+
+            <div class="savebar" id="saveBar">
+              <span class="dirty" id="dirtyFlag" hidden><i></i>有未保存的更改</span>
+              <div class="savebar-actions">
+                <button class="text-btn" data-act="reset-form">还原</button>
+                <button class="btn btn-primary" data-act="save-settings">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="statusbar">
+      <i class="dot muted" id="footDot"></i>
+      <span id="footStatus">启动中…</span>
+      <span class="statusbar-spacer"></span>
+      <span id="footMeta">上次 — · 下次 — · 数据目录 data/platforms/</span>
+    </footer>
+  </main>
+</div>
+
+<!-- 改动说明抽屉 -->
+<aside class="drawer" id="notesDrawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <div class="kicker">Design Notes</div>
+      <h3 id="notesTitle">本页改动说明</h3>
+    </div>
+    <button class="text-btn" id="notesClose">关闭</button>
+  </div>
+  <div class="drawer-body" id="notesBody"></div>
+  <div class="drawer-foot">对应文件：xmonitor/ui/*.py · 详见 design/设计方案.md</div>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- 弹层 -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-sheet">
+    <div class="modal-head"><h3 id="modalTitle">预览</h3><button class="text-btn" id="modalClose">关闭</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="./prototype.js"></script>
+</body>
+</html>
