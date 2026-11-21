@@ -8,7 +8,8 @@ from pathlib import Path
 
 from .base import PlatformAdapter
 
-RESERVED = {"__init__", "base", "schema", "browser_session", "__pycache__"}
+RESERVED = {"__init__", "base", "schema", "browser_session", "xhs_browser",
+            "__pycache__"}
 ORDER = ("x", "instagram", "xiaohongshu", "weibo", "pixiv", "tiktok")
 _CACHE: dict[str, type[PlatformAdapter]] = {}
 

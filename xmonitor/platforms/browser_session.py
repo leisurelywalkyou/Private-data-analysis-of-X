@@ -36,6 +36,29 @@ class BrowserSessionError(RuntimeError):
     pass
 
 
+# 部分平台会给游客也下发锚点 Cookie（小红书即如此），需要再看页面内的登录标记
+LOGIN_STATE_JS = {
+    "xiaohongshu": (
+        "() => { const u = window.__INITIAL_STATE__ && window.__INITIAL_STATE__.user;"
+        " if (!u || !u.loggedIn) return false;"
+        " return !/\\/login|\\/website-login/.test(location.href); }"),
+}
+
+
+def page_logged_in(context, platform: str) -> bool:
+    """页面内确认登录状态；没有判定脚本的平台直接放行。"""
+    script = LOGIN_STATE_JS.get(platform)
+    if not script:
+        return True
+    for page in context.pages:
+        try:
+            if page.evaluate(script):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def session_value(cookies: list[dict], domains: tuple[str, ...], name: str) -> str:
     """只取目标域名下的锚点 Cookie 值。"""
     if not name:
@@ -162,6 +185,9 @@ class BrowserSessionBridge:
                         if not values.get(anchor):
                             self._emit("error",
                                        f"未读取到 {anchor}，请确认已完成登录")
+                        elif not page_logged_in(context, self.platform):
+                            self._emit("error",
+                                       "页面未显示登录状态，请完成扫码并在手机上确认后再读取")
                         else:
                             extras = {k: v for k, v in values.items()
                                       if k != anchor}

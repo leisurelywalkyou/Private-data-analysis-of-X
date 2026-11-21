@@ -52,6 +52,10 @@ class PlatformAdapter(ABC):
     def is_repost(self, post: dict) -> bool:
         return bool(post.get("is_repost"))
 
+    def is_reply(self, post: dict) -> bool:
+        """是否回复了别人的帖子（用于「只保留本人原创」过滤）。"""
+        return False
+
     def verify(self, account: dict) -> dict:
         """用第二个来源交叉校验账号数据；无第二来源时明确标记。"""
         return {"checked": False, "reason": "single_source"}

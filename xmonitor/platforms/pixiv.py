@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ..core.http import HttpError
+from ..core.http import HttpError, NotFoundError
 from .base import PlatformAdapter, PlatformError
 from .schema import make_account, make_post
 
@@ -25,18 +25,42 @@ class PixivAdapter(PlatformAdapter):
     profile_url = "https://www.pixiv.net/users/{id}"
 
     def _uid(self) -> str:
-        if self.user_id:
+        """解析数字用户 ID：支持纯数字、主页链接，以及用登录会话反查本人 ID。"""
+        raw = self.user_id.strip()
+        if raw.isdigit():
+            return raw
+        match = (re.search(r"(?:^|/)users/(\d+)", raw)
+                 or re.fullmatch(r"@?(\d{3,})", raw))
+        if match:
+            self.user_id = match.group(1)
             return self.user_id
-        if self.account_name.isdigit():
-            return self.account_name
-        raise PlatformError("pixiv 需要填写 platform_user_id（数字用户 ID）")
+        # 填的是 pixiv ID / 昵称时，用已登录会话查询本人数字 ID
+        try:
+            data = self.http.get_json(f"{BASE}/user/self", params={"lang": "zh"})
+        except HttpError as e:
+            raise PlatformError(
+                f"pixiv 需要数字用户 ID（个人主页 /users/ 后的数字），"
+                f"当前值 “{raw}” 无法解析：{e}") from e
+        user = data.get("userData") or (data.get("body") or {}).get("userData") or {}
+        uid = str(user.get("id") or "")
+        if not uid.isdigit():
+            raise PlatformError("pixiv 需要数字用户 ID：请填个人主页 URL 中 /users/ 后的数字")
+        self.user_id = uid
+        if not self.account_name:
+            self.account_name = str(user.get("name") or user.get("pixivId") or uid)
+        self.log(f"pixiv 已按登录会话解析数字用户 ID：{uid}")
+        return uid
 
     def _all_works(self) -> dict:
         # 同一轮采集内 fetch_account / fetch_posts 共用一份作品索引
         if getattr(self, "_works_cache", None) is not None:
             return self._works_cache
-        data = self.http.get_json(f"{BASE}/user/{self._uid()}/profile/all",
-                                  params={"lang": "zh"})
+        uid = self._uid()
+        try:
+            data = self.http.get_json(f"{BASE}/user/{uid}/profile/all",
+                                      params={"lang": "zh"})
+        except NotFoundError as e:
+            raise PlatformError(f"pixiv 用户 {uid} 不存在，请检查数字用户 ID 与登录态") from e
         if data.get("error"):
             raise PlatformError(f"pixiv 返回错误：{data.get('message')}")
         self._works_cache = data.get("body") or {}
