@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox
 
+from ..core.collector import make_store
 from ..core.config import data_dir, save_config
 from ..platforms import (available, clean_session_value, extra_cookie_names,
                          load, session_cookie_name, user_id_required)
@@ -16,6 +17,8 @@ from .theme import (FONT, FONT_LABEL, FONT_SMALL,
 
 PLATFORM_FIELDS = ("enabled", "account_name", "platform_user_id", "session_id",
                    "cookies", "max_posts", "filters")
+DATA_HINT = ("删除 data/platforms/<平台>/ 下的帖子、快照、账号与运行记录；"
+             "不影响配置、登录会话和已生成报告。")
 
 SESSION_GUIDES = {
     "x": ("获取锚点：点「浏览器登录」自动读取 auth_token 与 ct0；也可在 x.com 登录后，"
@@ -37,7 +40,8 @@ SESSION_GUIDES = {
     "pixiv": ("获取锚点：点「浏览器登录」自动读取 PHPSESSID；也可在 pixiv.net 登录后，"
               "开发者工具 → Cookies 复制 PHPSESSID。\n"
               "账号名称：昵称。\n"
-              "用户 ID：个人主页链接 pixiv.net/users/<数字ID> 中的数字。"),
+              "用户 ID：个人主页链接 pixiv.net/users/<数字ID> 中的数字；"
+              "也可直接粘贴个人主页链接或 pixiv ID，由登录会话自动识别。"),
     "tiktok": ("获取锚点：点「浏览器登录」自动读取 sessionid 与 tt_chain_token；也可在 tiktok.com "
                "登录后，开发者工具 → Cookies 复制 sessionid。\n"
                "账号名称：主页 handle（不含 @）。\n"
@@ -63,10 +67,11 @@ def _as_int(text: str) -> int | None:
 class SettingsPage(tk.Frame):
     """05 设置：左平台列表、右分区表单、底部保存条。"""
 
-    def __init__(self, parent, cfg: dict, on_saved=None):
+    def __init__(self, parent, cfg: dict, on_saved=None, on_data_cleared=None):
         super().__init__(parent, bg=PAPER)
         self.cfg = cfg
         self.on_saved = on_saved
+        self.on_data_cleared = on_data_cleared
         self.platforms = available()
         self.selected = self.platforms[0] if self.platforms else ""
         self.staged: dict[str, dict] = {}
@@ -82,6 +87,7 @@ class SettingsPage(tk.Frame):
             "include": tk.StringVar(),
             "exclude": tk.StringVar(),
             "exclude_reposts": tk.BooleanVar(value=False),
+            "exclude_replies": tk.BooleanVar(value=False),
             "only_changed": tk.BooleanVar(value=False),
             "interval": tk.StringVar(
                 value=str(cfg.get("collect_interval_minutes", 30))),
@@ -134,6 +140,7 @@ class SettingsPage(tk.Frame):
         self.build_credential_section(form)
         self.build_filter_section(form, column=1)
         self.build_policy_section(form, column=1)
+        self.build_data_section(form, column=1)
 
     def build_footer(self):
         foot = tk.Frame(self, bg=PAPER)
@@ -253,6 +260,8 @@ class SettingsPage(tk.Frame):
         flags = tk.Frame(box, bg=PAPER)
         flags.pack(fill="x", pady=(10, 0))
         CheckRow(flags, "排除转发", self.vars["exclude_reposts"]).pack(side="left")
+        CheckRow(flags, "排除回复别人的帖子", self.vars["exclude_replies"]).pack(
+            side="left", padx=(18, 0))
         CheckRow(flags, "仅保留有变化的帖子", self.vars["only_changed"]).pack(
             side="left", padx=(18, 0))
 
@@ -280,6 +289,69 @@ class SettingsPage(tk.Frame):
                 side="right", pady=5)
             rule(table).pack(fill="x")
 
+    def build_data_section(self, parent, column: int):
+        box = tk.Frame(parent, bg=PAPER)
+        box.grid(row=2, column=column, sticky="new", padx=(18, 0), pady=(16, 0))
+        self._section(box, "05", "数据管理", "仅清本机")
+
+        self.data_lbl = tk.Label(box, text="", bg=PAPER, fg=INK_SOFT,
+                                 font=FONT_SMALL, anchor="w", justify="left",
+                                 wraplength=380)
+        self.data_lbl.pack(fill="x")
+        action_button(box, "清除当前平台采集数据", self.clear_platform_data,
+                      "secondary", fg=VERMILION).pack(anchor="w", pady=(8, 0))
+        self.data_hint = tk.Label(
+            box, text=DATA_HINT,
+            bg=PAPER, fg=MUTED, font=FONT_SMALL, anchor="w", justify="left",
+            wraplength=380)
+        self.data_hint.pack(fill="x", pady=(6, 0))
+
+    def _refresh_data_stats(self):
+        if not self.selected:
+            return
+        try:
+            stats = make_store(self.cfg, self.selected).stats()
+        except Exception:
+            stats = {"posts": 0, "snapshots": 0, "runs": 0}
+        self.data_lbl.configure(
+            text=f"{load(self.selected).label}：帖子 {stats['posts']} 条 · "
+                 f"快照 {stats['snapshots']} 个 · 运行记录 {stats['runs']} 轮")
+
+    def clear_platform_data(self):
+        platform = self.selected
+        if not platform:
+            return
+        label = load(platform).label
+        try:
+            store = make_store(self.cfg, platform)
+            stats = store.stats()
+        except Exception as e:
+            self.data_hint.configure(text=f"读取数据失败：{e}", fg=VERMILION)
+            return
+        if not any((stats["posts"], stats["snapshots"], stats["runs"])):
+            self.data_hint.configure(text=f"{label} 还没有采集数据可清除。",
+                                     fg=MUTED)
+            return
+        if not messagebox.askyesno(
+                "清除采集数据",
+                f"将删除 {label} 的 {stats['posts']} 条帖子、"
+                f"{stats['snapshots']} 个快照和 {stats['runs']} 轮运行记录。\n"
+                "此操作不可撤销，是否继续？",
+                parent=self.winfo_toplevel()):
+            return
+        try:
+            cleared = store.clear()
+        except OSError as e:
+            self.data_hint.configure(text=f"清除失败：{e}", fg=VERMILION)
+            return
+        self._refresh_data_stats()
+        self.data_hint.configure(
+            text=f"已清除 {label} 的 {cleared['posts']} 条帖子、"
+                 f"{cleared['snapshots']} 个快照与 {cleared['runs']} 轮运行记录。",
+            fg=TEAL)
+        if self.on_data_cleared:
+            self.on_data_cleared(platform)
+
     # ---------- 表单状态 ----------
     def _snapshot(self) -> dict:
         return {
@@ -293,6 +365,7 @@ class SettingsPage(tk.Frame):
                 "include_keywords": split_keywords(self.vars["include"].get()),
                 "exclude_keywords": split_keywords(self.vars["exclude"].get()),
                 "exclude_reposts": bool(self.vars["exclude_reposts"].get()),
+                "exclude_replies": bool(self.vars["exclude_replies"].get()),
                 "only_changed": bool(self.vars["only_changed"].get()),
             },
         }
@@ -311,6 +384,7 @@ class SettingsPage(tk.Frame):
                 "include_keywords": list(filters.get("include_keywords") or []),
                 "exclude_keywords": list(filters.get("exclude_keywords") or []),
                 "exclude_reposts": bool(filters.get("exclude_reposts")),
+                "exclude_replies": bool(filters.get("exclude_replies")),
                 "only_changed": bool(filters.get("only_changed")),
             },
         }
@@ -333,6 +407,7 @@ class SettingsPage(tk.Frame):
             self.vars["include"].set(", ".join(filters["include_keywords"]))
             self.vars["exclude"].set(", ".join(filters["exclude_keywords"]))
             self.vars["exclude_reposts"].set(bool(filters["exclude_reposts"]))
+            self.vars["exclude_replies"].set(bool(filters.get("exclude_replies")))
             self.vars["only_changed"].set(bool(filters["only_changed"]))
         else:
             filters = block.get("filters") or {}
@@ -345,6 +420,7 @@ class SettingsPage(tk.Frame):
             self.vars["include"].set(", ".join(filters.get("include_keywords") or []))
             self.vars["exclude"].set(", ".join(filters.get("exclude_keywords") or []))
             self.vars["exclude_reposts"].set(bool(filters.get("exclude_reposts")))
+            self.vars["exclude_replies"].set(bool(filters.get("exclude_replies")))
             self.vars["only_changed"].set(bool(filters.get("only_changed")))
         self._loading = False
 
@@ -376,6 +452,8 @@ class SettingsPage(tk.Frame):
         self.session_entry.configure(show="*")
         self.show_btn.configure(text="显示")
         self._validate_current()
+        self._refresh_data_stats()
+        self.data_hint.configure(text=DATA_HINT, fg=MUTED)
 
     def focus_platform(self, platform: str):
         if not platform or platform == self.selected:
@@ -495,6 +573,7 @@ class SettingsPage(tk.Frame):
                 "exclude_keywords": split_keywords(
                     ", ".join(snap["filters"]["exclude_keywords"])),
                 "exclude_reposts": bool(snap["filters"]["exclude_reposts"]),
+                "exclude_replies": bool(snap["filters"]["exclude_replies"]),
                 "only_changed": bool(snap["filters"]["only_changed"]),
             },
         }
@@ -560,8 +639,8 @@ class SettingsDialog(tk.Toplevel):
 
         self.title("设置 · x 观测台")
         self.configure(bg=PAPER)
-        self.geometry("1100x700")
-        self.minsize(1000, 640)
+        self.geometry("1200x800")
+        self.minsize(1080, 780)
         self.transient(master)
         self.grab_set()
         apply_style(self)

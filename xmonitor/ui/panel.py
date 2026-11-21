@@ -102,8 +102,8 @@ class App:
     # ---------- 外壳 ----------
     def build_ui(self):
         self.root.title("x 观测台 · 账号数据监控")
-        self.root.geometry("1180x780")
-        self.root.minsize(1040, 680)
+        self.root.geometry("1280x880")
+        self.root.minsize(1120, 870)
         self.root.configure(bg=PAPER)
         apply_style(self.root)
 
@@ -209,7 +209,8 @@ class App:
         self.analytics = AnalyticsPage(host, self)
         self.reports = ReportsPage(host, self)
         self.settings_page = SettingsPage(host, self.cfg,
-                                          on_saved=self.on_settings_saved)
+                                          on_saved=self.on_settings_saved,
+                                          on_data_cleared=self.on_data_cleared)
         self.pages = {"overview": self.overview, "monitor": self.monitor,
                       "analytics": self.analytics, "reports": self.reports,
                       "settings": self.settings_page}
@@ -432,6 +433,18 @@ class App:
         self.refresh_all()
         self.set_status("设置已保存", "ok")
         self.toast("设置已保存", "ok")
+
+    def on_data_cleared(self, platform: str):
+        """清理平台数据后刷新库存、流水与图表缓存。"""
+        self.invalidate(platform)
+        self.overview.invalidate()
+        self.analytics.invalidate()
+        self.refresh_scope()
+        if platform == self.platform:
+            self.overview.refresh()
+        self.monitor.refresh()
+        self.set_status(f"{load(platform).label} 采集数据已清除", "muted")
+        self.toast(f"{load(platform).label} 采集数据已清除", "muted")
 
     # ---------- 报告 ----------
     def register_report_button(self, button: tk.Button, text: str):
