@@ -18,7 +18,7 @@ from xmonitor.core.config import load_config
 from xmonitor.core.http import HttpClient, LoginRequired, RateLimited
 from xmonitor.core.scheduler import MultiCollectScheduler
 from xmonitor.core.store import PlatformStore
-from xmonitor.platforms.base import PlatformAdapter
+from xmonitor.platforms.base import PlatformAdapter, PlatformError
 from xmonitor.platforms import (available, clean_session_value, extra_cookie_names,
                                 has_session, load, session_cookie_name,
                                 session_header, unload, user_id_required)
@@ -119,6 +119,30 @@ class StoreTest(unittest.TestCase):
             self.assertEqual(store.upsert_posts(rows, now), 0)
             self.assertEqual(store.upsert_posts([{**rows[0], "post_id": "p2"}], now), 1)
 
+    def test_clear_removes_all_platform_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PlatformStore(tmp, "x", account_metrics=("followers",),
+                                  post_metrics=("likes", "comments", "shares"))
+            now = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+            rows = [{"platform": "x", "account_name": "a", "platform_user_id": "1",
+                     "post_id": "p1", "created_at": "2026-10-31T11:00:00+00:00",
+                     "title": "", "text": "hello", "url": "u", "media_type": "text",
+                     "likes": 5, "comments": 2, "shares": 1}]
+            store.upsert_posts(rows, now)
+            store.add_snapshots(rows, now)
+            store.set_account({"platform": "x", "account_name": "a",
+                               "platform_user_id": "1", "followers": 10})
+            store.record_run(status="ok")
+            cleared = store.clear()
+            self.assertEqual((cleared["posts"], cleared["snapshots"],
+                              cleared["runs"]), (1, 1, 1))
+            stats = store.stats()
+            self.assertEqual((stats["posts"], stats["snapshots"], stats["runs"]),
+                             (0, 0, 0))
+            self.assertFalse(store.account_path.exists())
+            self.assertFalse(store.posts_path.exists())
+            self.assertFalse(store.runs_path.exists())
+
 
 class ReportWriteTest(unittest.TestCase):
     def test_same_second_reports_do_not_collide(self):
@@ -156,23 +180,124 @@ class HttpTest(unittest.TestCase):
 
 class AdapterParseTest(unittest.TestCase):
     def test_x(self):
+        profile = ('<meta property="profile:username" content="demo">'
+                   '\\"relationship_counts\\":{\\"followers\\":1200,\\"following\\":88},'
+                   '\\"tweet_counts\\":{\\"tweets\\":340},restId:"42"')
         adapter = load("x")({"account_name": "demo", "max_posts": 5}, FakeHttp(
-            json_map={"followbutton": [{"id_str": "42", "screen_name": "demo",
-                                        "followers_count": 1200, "following_count": 88,
-                                        "tweet_count": 340}]},
-            text_map={"timeline-profile": '<script id="__NEXT_DATA__" type="application/json">'
+            text_map={"x.com/demo": profile,
+                      "timeline-profile": '<script id="__NEXT_DATA__" type="application/json">'
                      + json.dumps({"props": {"pageProps": {"timeline": {"entries": [
                          {"content": {"tweet": {"id_str": "1", "full_text": "hello",
                                                 "created_at": "Sat Oct 31 10:00:00 +0000 2026",
                                                 "favorite_count": 3, "reply_count": 1,
-                                                "retweet_count": 2}}}]}}}})
+                                                "retweet_count": 2,
+                                                "views": {"count": "99"}}}}]}}}})
                      + "</script>"},
         ))
         account = adapter.fetch_account()
         posts = adapter.fetch_posts()
         self.assertEqual(account["followers"], 1200)
+        self.assertEqual(account["platform_user_id"], "42")
         self.assertEqual(posts[0]["likes"], 3)
         self.assertEqual(posts[0]["comments"], 1)
+        self.assertEqual(posts[0]["views"], 99)
+
+    def test_x_resolves_handle_from_login_session(self):
+        profile = ('<meta property="profile:username" content="demo">'
+                   '\\"relationship_counts\\":{\\"followers\\":1200,\\"following\\":88},'
+                   '\\"tweet_counts\\":{\\"tweets\\":340},restId:"42"')
+
+        class SessionHttp:
+            def get_text(self, url, **kwargs):
+                if "x.com/home" in url:
+                    return '<script>{"screen_name":"demo"}</script>'
+                return profile
+
+        adapter = load("x")({"account_name": "昵称", "session_id": "token",
+                             "max_posts": 5}, SessionHttp())
+        account = adapter.fetch_account()
+        self.assertEqual(account["account_name"], "demo")
+
+    def test_x_rejects_invalid_handle_without_session(self):
+        adapter = load("x")({"account_name": "invalid handle"}, FakeHttp())
+        with self.assertRaises(PlatformError):
+            adapter.fetch_account()
+
+    def test_x_falls_back_to_profile_html(self):
+        profile = ('<meta property="profile:username" content="demo">'
+                   '\\"relationship_counts\\":{\\"followers\\":1200,\\"following\\":88},'
+                   '\\"tweet_counts\\":{\\"tweets\\":340},restId:"42",'
+                   '\\"tweet_results\\":{\\"rest_id\\":\\"101\\",'
+                   '\\"counts\\":{\\"bookmark_count\\":0,\\"favorite_count\\":7,'
+                   '\\"quote_count\\":1,\\"reply_count\\":2,\\"retweet_count\\":3},'
+                   '\\"details\\":{\\"created_at_ms\\":1790000000000,\\"full_text\\":\\"hi\\"},'
+                   '\\"views\\":{\\"count\\":\\"321\\"}}')
+
+        class TimelineBlocked:
+            def get_text(self, url, **kwargs):
+                if "timeline-profile" in url:
+                    raise RateLimited("Rate limit exceeded")
+                return profile
+
+        adapter = load("x")({"account_name": "demo", "max_posts": 5}, TimelineBlocked())
+        posts = adapter.fetch_posts()
+        self.assertEqual(posts[0]["post_id"], "101")
+        self.assertEqual(posts[0]["likes"], 7)
+        self.assertEqual(posts[0]["shares"], 3)
+        self.assertEqual(posts[0]["views"], 321)
+
+    def test_x_fills_views_from_status_page(self):
+        profile = ('<meta property="profile:username" content="demo">'
+                   '\\"relationship_counts\\":{\\"followers\\":1200,\\"following\\":88},'
+                   '\\"tweet_counts\\":{\\"tweets\\":340},restId:"42"')
+        timeline = ('<script id="__NEXT_DATA__" type="application/json">'
+                    + json.dumps({"props": {"pageProps": {"timeline": {"entries": [
+                        {"content": {"tweet": {"id_str": "1", "full_text": "hello",
+                                               "created_at": "Sat Oct 31 10:00:00 +0000 2026",
+                                               "favorite_count": 3, "reply_count": 1,
+                                               "retweet_count": 2}}}]}}}})
+                    + "</script>")
+
+        class StatusHttp:
+            def get_text(self, url, **kwargs):
+                if "timeline-profile" in url:
+                    return timeline
+                if "/status/" in url:
+                    return '\\"views\\":{\\"count\\":\\"456\\"}'
+                return profile
+
+        adapter = load("x")({"account_name": "demo", "max_posts": 5}, StatusHttp())
+        adapter.fetch_account()
+        posts = adapter.fetch_posts()
+        self.assertEqual(posts[0]["views"], 456)
+
+    def test_x_reply_and_repost_flags(self):
+        def entry(tid, text, **extra):
+            tweet = {"id_str": tid, "full_text": text,
+                     "created_at": "Sat Oct 31 10:00:00 +0000 2026",
+                     "favorite_count": 1, "reply_count": 0, "retweet_count": 0,
+                     "views": {"count": "10"}}
+            tweet.update(extra)
+            return {"content": {"tweet": tweet}}
+
+        timeline = ('<script id="__NEXT_DATA__" type="application/json">'
+                    + json.dumps({"props": {"pageProps": {"timeline": {"entries": [
+                        entry("1", "original"),
+                        entry("2", "RT @other: hi", retweeted_status={"id_str": "9"}),
+                        entry("3", "reply other", in_reply_to_status_id_str="8",
+                              in_reply_to_screen_name="other"),
+                        entry("4", "self thread", in_reply_to_status_id_str="1",
+                              in_reply_to_screen_name="demo"),
+                    ]}}}}) + "</script>")
+        adapter = load("x")({"account_name": "demo", "max_posts": 10},
+                            FakeHttp(text_map={"timeline-profile": timeline}))
+        posts = adapter.fetch_posts()
+        flags = [(p["post_id"], adapter.is_repost(p), adapter.is_reply(p)) for p in posts]
+        self.assertEqual(flags, [("1", False, False), ("2", True, False),
+                                 ("3", False, True), ("4", False, False)])
+        kept = collector.apply_filters(
+            adapter, posts, {"exclude_reposts": True, "exclude_replies": True})
+        self.assertEqual([p["post_id"] for p in kept], ["1", "4"])
 
     def test_xiaohongshu(self):
         state = {"user": {"userPageData": {
@@ -188,12 +313,35 @@ class AdapterParseTest(unittest.TestCase):
         html = ("<script>window.__INITIAL_STATE__="
                 + json.dumps(state) + "</script>")
         adapter = load("xiaohongshu")({"account_name": "红", "platform_user_id": "u1",
-                                       "max_posts": 5},
+                                       "max_posts": 5, "render": "http"},
                                       FakeHttp(text_map={"user/profile": html}))
         account = adapter.fetch_account()
         posts = adapter.fetch_posts()
         self.assertEqual(account["followers"], 12000)
         self.assertEqual(posts[0]["saves"], 20)
+
+    def test_xhs_note_normalize(self):
+        """新版页面 noteCard 与接口 snake_case 两种结构都要能归一。"""
+        from xmonitor.platforms.xhs_browser import normalize_note
+
+        camel = normalize_note({
+            "id": "n1", "xsecToken": "tok",
+            "noteCard": {"displayTitle": "标题", "type": "video", "time": 1790000000000,
+                         "interactInfo": {"likedCount": "1.2万", "commentCount": "5",
+                                          "shareCount": "2", "collectedCount": "20"}},
+        })
+        self.assertEqual(camel["note_id"], "n1")
+        self.assertEqual(camel["likes"], "1.2万")
+        self.assertEqual(camel["xsec_token"], "tok")
+
+        snake = normalize_note({
+            "id": "n2", "xsec_token": "t2",
+            "note_card": {"display_title": "标题2", "type": "normal", "time": 1790000000000,
+                          "interact_info": {"liked_count": "9", "collected_count": "3"}},
+        })
+        self.assertEqual(snake["title"], "标题2")
+        self.assertEqual(snake["saves"], "3")
+        self.assertIsNone(normalize_note({}))
 
     def test_weibo(self):
         adapter = load("weibo")({"account_name": "博主", "platform_user_id": "100",
@@ -270,6 +418,27 @@ class AdapterParseTest(unittest.TestCase):
         self.assertEqual(account["posts_count"], 2)
         self.assertEqual(posts[0]["post_id"], "2")
         self.assertEqual(posts[0]["saves"], 10)
+
+    def test_pixiv_resolves_uid_from_login_session(self):
+        adapter = load("pixiv")({"account_name": "画师", "platform_user_id": "user_demo",
+                                 "max_posts": 5}, FakeHttp(json_map={
+            "user/self": {"userData": {"id": "123456", "name": "画师"}},
+            "profile/all": {"error": False,
+                            "body": {"illusts": {}, "manga": {}, "novels": {}}},
+        }))
+        account = adapter.fetch_account()
+        self.assertEqual(account["platform_user_id"], "123456")
+        self.assertEqual(account["posts_count"], 0)
+
+    def test_pixiv_accepts_profile_url(self):
+        adapter = load("pixiv")({"account_name": "画师",
+                                 "platform_user_id": "https://www.pixiv.net/users/123456",
+                                 "max_posts": 5}, FakeHttp(json_map={
+            "profile/all": {"error": False,
+                            "body": {"illusts": {}, "manga": {}, "novels": {}}},
+        }))
+        account = adapter.fetch_account()
+        self.assertEqual(account["platform_user_id"], "123456")
 
 
 class FakeAdapter(PlatformAdapter):
