@@ -116,11 +116,21 @@ class HttpClient:
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
         kwargs.setdefault("timeout", self.timeout)
         kwargs.setdefault("allow_redirects", True)
+        drop_cookies = bool(kwargs.pop("drop_cookies", False))
         last_error: Exception | None = None
         for attempt in range(1, self.retries + 1):
             self._throttle()
             try:
-                resp = self.session.request(method, url, **kwargs)
+                if drop_cookies:
+                    # 公开页面不携带登录态请求，避免站点返回登录后的应用外壳
+                    saved = self.session.cookies.copy()
+                    self.session.cookies.clear()
+                    try:
+                        resp = self.session.request(method, url, **kwargs)
+                    finally:
+                        self.session.cookies.update(saved)
+                else:
+                    resp = self.session.request(method, url, **kwargs)
             except requests.RequestException as e:
                 last_error = e
                 if attempt >= self.retries:

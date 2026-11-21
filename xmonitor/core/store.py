@@ -210,3 +210,18 @@ class PlatformStore:
             "runs": len(runs),
             "last_run": runs[-1] if runs else None,
         }
+
+    def clear(self) -> dict:
+        """删除该平台的全部采集数据，返回清除前的统计。
+
+        只删除账号、帖子、快照与运行记录，不动配置、登录会话和报告。
+        """
+        with LOCK:
+            before = self.stats()
+            for path in (self.account_path, self.posts_path, self.runs_path,
+                         *self.month_files()):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+        return before

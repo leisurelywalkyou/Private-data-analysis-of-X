@@ -12,8 +12,11 @@ from zoneinfo import ZoneInfo
 # 打包为绿色版后，根目录取可执行文件所在目录（data/、reports/ 与 exe 同级，便于整包移动）
 if getattr(sys, "frozen", False):
     PROJECT_ROOT = Path(sys.executable).resolve().parent
+    # 静态资源随程序打包：onedir 在 _internal 下，onefile 在临时解包目录
+    RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
 else:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    RESOURCE_ROOT = PROJECT_ROOT
 DEFAULT_CONFIG_NAME = "config.json"
 
 COMMON_PLATFORM = {
@@ -29,6 +32,7 @@ COMMON_PLATFORM = {
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": False,
+        "exclude_replies": False,
         "only_changed": False,
     },
     "retry": {
@@ -64,14 +68,19 @@ DEFAULTS = {
     "platforms": {
         "x": _platform(True, 3),
         "instagram": _platform(False, 5),
-        "xiaohongshu": _platform(False, 6),
+        "xiaohongshu": {**_platform(False, 10), "note_detail_limit": 5,
+                        "rate_limit": {"min_interval_seconds": 10,
+                                       "max_requests_per_minute": 6}},
         "weibo": _platform(False, 3),
-        "pixiv": _platform(False, 2),
+        "pixiv": {**_platform(False, 2),
+                  "rate_limit": {"min_interval_seconds": 2,
+                                 "max_requests_per_minute": 30}},
         "tiktok": _platform(False, 5),
     },
     "pet": {
         "x": None,
         "y": None,
+        "skin": "pig",
     },
 }
 

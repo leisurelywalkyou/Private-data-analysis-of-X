@@ -118,6 +118,7 @@ def apply_filters(adapter, posts: list[dict], filters: dict) -> list[dict]:
     exclude = [w.lower() for w in filters.get("exclude_keywords") or [] if str(w).strip()]
     only_changed = bool(filters.get("only_changed"))
     exclude_reposts = bool(filters.get("exclude_reposts"))
+    exclude_replies = bool(filters.get("exclude_replies"))
     out = []
     for post in posts:
         haystack = f"{post.get('title') or ''} {post.get('text') or ''}".lower()
@@ -126,6 +127,8 @@ def apply_filters(adapter, posts: list[dict], filters: dict) -> list[dict]:
         if exclude and any(word in haystack for word in exclude):
             continue
         if exclude_reposts and adapter.is_repost(post):
+            continue
+        if exclude_replies and adapter.is_reply(post):
             continue
         out.append(post)
     return out
