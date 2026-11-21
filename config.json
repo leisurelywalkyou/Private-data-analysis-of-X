@@ -11,7 +11,7 @@
   },
   "platforms": {
     "x": {
-      "enabled": true,
+      "enabled": false,
       "account_name": "",
       "platform_user_id": "",
       "session_id": "",
@@ -23,6 +23,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -48,6 +49,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -73,6 +75,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -81,9 +84,10 @@
         "backoff_max_seconds": 60
       },
       "rate_limit": {
-        "min_interval_seconds": 6,
-        "max_requests_per_minute": 15
-      }
+        "min_interval_seconds": 10,
+        "max_requests_per_minute": 6
+      },
+      "note_detail_limit": 5
     },
     "weibo": {
       "enabled": false,
@@ -98,6 +102,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -123,6 +128,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -148,6 +154,7 @@
         "include_keywords": [],
         "exclude_keywords": [],
         "exclude_reposts": false,
+        "exclude_replies": false,
         "only_changed": false
       },
       "retry": {
@@ -163,6 +170,7 @@
   },
   "pet": {
     "x": null,
-    "y": null
+    "y": null,
+    "skin": "pig"
   }
 }

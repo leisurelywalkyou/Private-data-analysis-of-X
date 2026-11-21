@@ -17,9 +17,10 @@ from datetime import datetime
 
 from xmonitor.core import analysis, report
 from xmonitor.core.collector import collect_platform, make_store
-from xmonitor.core.config import data_dir, get_tz, load_config
+from xmonitor.core.config import data_dir, get_tz, load_config, save_config
 from xmonitor.core.scheduler import MultiCollectScheduler
 from xmonitor.platforms import available, enabled_ids, load
+from xmonitor.platforms import xhs_browser
 
 
 def log(message: str) -> None:
@@ -94,6 +95,20 @@ def cmd_report(cfg: dict, platform: str, days: int) -> int:
     return 0
 
 
+def cmd_login(cfg: dict, platform: str, timeout: float) -> int:
+    if platform != "xiaohongshu":
+        log(f"{platform} 暂不支持命令行登录，请在观测台「设置 → 浏览器登录」完成")
+        return 2
+    try:
+        value = xhs_browser.interactive_login(cfg, timeout=timeout, log=log)
+    except Exception as e:
+        log(f"{platform} 登录失败：{type(e).__name__}: {e}")
+        return 1
+    save_config(cfg, {"platforms": {platform: {"session_id": value}}})
+    log(f"{platform} 会话已写入配置文件")
+    return 0
+
+
 def cmd_status(cfg: dict) -> int:
     print(f"时区：{cfg['timezone']} | 数据目录：{data_dir(cfg)}")
     if not available():
@@ -126,6 +141,10 @@ def main() -> int:
     p_report.add_argument("--platform", default="x", help="平台标识，默认 x")
     p_report.add_argument("--days", type=int, default=30, help="统计天数")
     sub.add_parser("status", help="查看各平台本地状态")
+    p_login = sub.add_parser("login", help="打开浏览器手动登录并保存会话")
+    p_login.add_argument("--platform", default="xiaohongshu", help="平台标识")
+    p_login.add_argument("--timeout", type=float, default=300,
+                         help="等待登录的秒数")
 
     args = parser.parse_args()
     cfg = load_config(args.config)
@@ -141,6 +160,8 @@ def main() -> int:
             return cmd_report(cfg, args.platform, args.days)
         if args.cmd == "status":
             return cmd_status(cfg)
+        if args.cmd == "login":
+            return cmd_login(cfg, args.platform, args.timeout)
         parser.print_help()
         return 0
     except KeyboardInterrupt:

@@ -9,6 +9,9 @@
 ## 功能
 
 - 桌宠主程序：透明置顶 GIF 角色、拖拽记忆位置、气泡播报、右键菜单
+- 桌宠外观：内置小猪、阿米娅、跳舞小猫三套动画外观，右键即时切换并记忆
+- 内置音乐：每个外观绑定一首曲目，右键播放 / 暂停 / 切歌；`assets/music/` 可继续放 mp3 / wav
+- 数据管理：设置页可清除当前平台的采集数据，避免错误数据污染分析
 - 六平台采集：适配器独立模块、配置驱动、动态加载与卸载
 - 平台数据隔离：每平台独立目录与指标列，平台不提供的指标不写入
 - 采集稳定性：超时、重试、指数退避、限频、按错误类型冷却
@@ -21,18 +24,23 @@
 ## 目录结构
 
 ```text
-猪群友桌宠/
+x自动脚本/
 ├─ pet.py                桌宠主程序入口（默认）
 ├─ app.py                监控面板入口
 ├─ main.py               CLI 入口
 ├─ xmonitor/
 │  ├─ core/              配置、HTTP、数据仓库、采集、分析、报告、调度
 │  ├─ platforms/         六个平台适配器 + 动态注册表 + 统一字段
-│  └─ ui/                桌宠、监控面板、设置
-├─ assets/pet/           桌宠角色帧（source.gif 与去白底后的 frames/）
+│  └─ ui/                桌宠、监控面板、设置、音乐播放器
+├─ assets/
+│  ├─ pet/frames/        小猪外观帧
+│  ├─ pet/skins/         阿米娅 / 跳舞小猫外观帧与源 GIF
+│  └─ music/             内置音乐（每个外观一首，可自行添加 mp3 / wav）
 ├─ tests/                离线单元测试
-├─ design/               界面与交互设计说明、HTML 原型
-├─ config.json           配置文件
+├─ .trae/skills/         开发用技能库（不参与运行）
+├─ skills-main/          技能源仓库
+├─ design/设计方案.md    界面与交互设计说明
+├─ config.json           本机配置（含会话锚点，已默认忽略提交）
 ├─ requirements.txt      依赖
 ├─ .gitignore            忽略运行时数据、日志与缓存
 ├─ 启动.bat              Windows 双击启动桌宠
@@ -45,7 +53,7 @@
 
 ## 环境
 
-- Python 3.9+（已在 3.12 验证）
+- Python 3.9+（已在 3.13 验证）
 - 安装依赖：
 
 ```powershell
@@ -71,6 +79,7 @@ pip install -r requirements.txt
       "include_keywords": [],
       "exclude_keywords": [],
       "exclude_reposts": false,
+      "exclude_replies": false,
       "only_changed": false
     },
     "retry": {"max_attempts": 4, "backoff_seconds": 2, "backoff_max_seconds": 60},
@@ -93,7 +102,9 @@ pip install -r requirements.txt
 | `filters.include_keywords` | 仅保留标题/正文包含这些词的帖子 |
 | `filters.exclude_keywords` | 排除包含这些词的帖子 |
 | `filters.exclude_reposts` | 排除转发 |
+| `filters.exclude_replies` | 排除回复别人的帖子（回复自己的线程保留） |
 | `filters.only_changed` | 只保留相对上次抓取指标有变化的帖子 |
+| `note_detail_limit` | 仅小红书：打开笔记详情补齐互动指标的篇数上限（主页卡片只显示点赞数），`0` 表示关闭 | 5 |
 | `retry.*` / `rate_limit.*` / `timeout` | 重试、限频与超时 |
 
 各平台的会话锚点与自动获取的附加 Cookie：
@@ -132,31 +143,78 @@ pip install -r requirements.txt
 pythonw pet.py
 ```
 
-- 双击桌宠：打开监控面板（已打开时仅提示）；单击：随机吐槽（你点我作甚？/ 你是小猪！/ 猪猪快干活！/ 你再这样我要哈气了！）
+- 双击桌宠：打开监控面板（已打开时仅提示）；单击：随机吐槽（不同外观有各自的台词）
 - 按住左键拖动：移动位置，退出时记住
-- 右键菜单：打开观测台、采集全部平台、按平台生成报告、设置、自动采集、始终置顶、退出
+- 右键菜单：打开观测台、运行监控、采集全部平台、生成报告、更换外观、播放音乐、音乐子菜单、设置、自动采集、始终置顶、退出
 - 采集结果用气泡播报；未配置账号或会话锚点时会提示
 - 自检：`python pet.py --selftest`
+
+#### 外观与音乐
+
+右键 →「更换外观」可切换三套内置外观，切换后立即生效并写入 `config.json` 的 `pet.skin`：
+
+| 外观 | 内置曲目 |
+| --- | --- |
+| 小猪（原版） | 未白镇.mp3 |
+| 阿米娅 | 邦友的酒(DJ版).mp3 |
+| 跳舞小猫 | 最后的自由.mp3 |
+
+- 右键 →「播放音乐」：播放 / 暂停 / 继续当前外观的曲目
+- 右键 →「音乐」：曲目列表、上一首 / 下一首 / 停止、打开音乐文件夹
+- 播放器使用 Windows MCI，支持 mp3 / wav；把音频放进 `assets/music/` 后重新打开菜单即可看到
+- 切换外观时，若音乐正在播放会自动切到新外观的曲目；暂停状态下切换则重置为新曲目
 
 ### 监控面板
 
 双击桌宠或右键「打开观测台」，也可执行 `pythonw app.py`：切换平台查看帖子与统计，触发采集或生成报告；「评估报告」页可预览、打开或删除单份历史报告（也可选中后按 Delete）。窗口关闭后桌宠自动恢复定时采集。
 
+设置页为双栏布局（建议窗口不小于 1120×870）：左栏切换平台，右侧依次为平台与账号、会话与凭据、过滤规则、运行策略、数据管理。其中「05 数据管理」会显示当前平台的帖子 / 快照 / 运行记录数量，并可一键清除该平台的采集数据（只删除 `data/platforms/<平台>/` 下的 CSV，不影响配置、登录会话和已生成报告）。
+
 ### 命令行
 
 ```powershell
 python main.py platforms                    # 列出平台
+python main.py login --platform xiaohongshu # 打开浏览器手动登录并保存会话
 python main.py collect --platform x        # 单平台采集
 python main.py daemon --interval 30        # 常驻采集全部启用平台
 python main.py report --platform x         # 生成报告
 python main.py status                      # 各平台本地数据量
 ```
 
+`login` 会打开一个可见的浏览器窗口停在登录页，由你本人扫码，程序只在检测到真实登录后读取 `web_session` 写回配置；等待超时默认 300 秒（`--timeout` 可调）。
+
 ### 测试
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+当前共 38 项离线测试，覆盖字段归一化、存储与清理、六平台解析、HTTP 重试与限流、调度与冷却、会话 Cookie、配置合并等。
+
+## 打包为 Windows 程序
+
+项目可直接用 PyInstaller 封装为免安装程序（onedir 形式，启动快）：
+
+```powershell
+python -m PyInstaller --noconfirm --clean --onedir --windowed --name "猪群友桌宠" --add-data "assets;assets" --collect-submodules xmonitor --collect-data playwright pet.py
+```
+
+产物位于 `dist/猪群友桌宠/`：
+
+- `猪群友桌宠.exe`：双击启动桌宠；`--panel` 启动观测台，`--selftest` 运行自检
+- `_internal/`：Python 运行时、tkinter、playwright 驱动与内置资源（`assets/`）
+- 把脱敏后的 `config.json` 放在 exe 同级；运行后 `data/`、`reports/` 也会生成在 exe 同级，便于整包移动
+- 打包后静态资源从程序目录读取（`RESOURCE_ROOT`），配置、数据、报告仍以 exe 所在目录为基准
+
+## 分享前脱敏清单
+
+`config.json`、`data/`、`reports/` 都可能包含个人数据，对外分享源码或安装包前请逐项确认：
+
+1. 清空 `config.json` 中所有平台的 `session_id`、`cookies`、`account_name`、`platform_user_id`，并把 `pet.x` / `pet.y` 置空
+2. 不要打包或上传 `data/`（含 `data/browser/` 浏览器登录态）、`reports/`、`debug.log`
+3. 删除或重新生成 `dist/` 下的旧安装包与压缩包，避免夹带旧配置
+4. 检查测试、文档与截图中不含真实账号、用户 ID、会话锚点或采集数据
+5. 本项目的 `.gitignore` 已忽略上述运行时文件与本机 `config.json`；对外发布时只保留清空凭据的配置模板
 
 ## 数据文件
 
@@ -189,5 +247,13 @@ python -m unittest discover -s tests -v
 - 不实现登录伪装、验证码绕过、指纹伪造、代理轮换；遇到登录墙或 403 会停止并冷却
 - `data/`、`reports/`、`*.log`（含 Chrome 生成的 `debug.log`）均为运行时产物，已在 `.gitignore` 中忽略；不要提交浏览器 profile
 - `data/browser/<平台>/` 保存浏览器登录态配置，属于敏感数据，请勿分享
-- `config.json` 含会话锚点与自动获取的附加 Cookie，分享代码前注意清理
+- `config.json` 含会话锚点与自动获取的附加 Cookie，已在 `.gitignore` 中忽略；分享代码前按上文「分享前脱敏清单」清理
+- `assets/` 内的角色帧、源 GIF 与内置音乐仅用于个人演示，版权归各自权利人所有；公开分发前请自行确认授权
+- 打包时不要把本机 `data/`、`reports/`、`config.json` 一起放进安装包；安装包只应携带脱敏后的配置模板
 - 网页接口结构会变化，解析失败会记录 `ParseError` 并进入冷却，不会静默写入错误数据
+- 小红书已对未登录与自动化请求强制跳登录页，且 headless 浏览器会触发风控（`error_code 300012`），因此该平台固定使用**真实 Chromium 渲染通道**：每轮采集启动一个离屏浏览器窗口（持久化 profile 位于 `data/browser/xiaohongshu/`），在页面内解包 Vue state 取数，并按 `note_detail_limit` 打开笔记详情补齐评论/收藏/分享。通道内所有停留均带随机抖动并放慢节奏，以接近真人浏览；HTTP 直连仅作为 playwright 未安装时的兜底
+- 小红书只采集主页「笔记」tab 中本人发布的作品，不采集收藏、点赞过的他人笔记
+
+## 开发技能库（可选）
+
+`skills-main` 的技能仍保留在项目级 `.trae/skills/`，仅供开发时参考，运行时不读取、不参与对话或采集。升级时把 `skills-main/skills/` 下新增或改动的目录复制到 `.trae/skills/`，保持目录名与 `SKILL.md` 中的 `name` 一致。
