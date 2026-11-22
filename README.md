@@ -40,13 +40,9 @@ x自动脚本/
 ├─ .trae/skills/         开发用技能库（不参与运行）
 ├─ skills-main/          技能源仓库
 ├─ design/设计方案.md    界面与交互设计说明
-├─ config.json           本机配置（含会话锚点，已默认忽略提交）
 ├─ requirements.txt      依赖
 ├─ .gitignore            忽略运行时数据、日志与缓存
 ├─ 启动.bat              Windows 双击启动桌宠
-├─ data/platforms/       运行后自动生成的分平台数据（已忽略）
-├─ data/browser/<平台>/  浏览器登录态配置（敏感，已忽略）
-└─ reports/<平台>/       生成的报告（latest.html 为最新一份，已忽略）
 ```
 
 配置、数据与报告中的相对路径统一按项目根目录解析，因此从任意目录执行 `python main.py ...` 都能读写到正确位置。
@@ -183,38 +179,7 @@ python main.py status                      # 各平台本地数据量
 
 `login` 会打开一个可见的浏览器窗口停在登录页，由你本人扫码，程序只在检测到真实登录后读取 `web_session` 写回配置；等待超时默认 300 秒（`--timeout` 可调）。
 
-### 测试
 
-```powershell
-python -m unittest discover -s tests -v
-```
-
-当前共 38 项离线测试，覆盖字段归一化、存储与清理、六平台解析、HTTP 重试与限流、调度与冷却、会话 Cookie、配置合并等。
-
-## 打包为 Windows 程序
-
-项目可直接用 PyInstaller 封装为免安装程序（onedir 形式，启动快）：
-
-```powershell
-python -m PyInstaller --noconfirm --clean --onedir --windowed --name "猪群友桌宠" --add-data "assets;assets" --collect-submodules xmonitor --collect-data playwright pet.py
-```
-
-产物位于 `dist/猪群友桌宠/`：
-
-- `猪群友桌宠.exe`：双击启动桌宠；`--panel` 启动观测台，`--selftest` 运行自检
-- `_internal/`：Python 运行时、tkinter、playwright 驱动与内置资源（`assets/`）
-- 把脱敏后的 `config.json` 放在 exe 同级；运行后 `data/`、`reports/` 也会生成在 exe 同级，便于整包移动
-- 打包后静态资源从程序目录读取（`RESOURCE_ROOT`），配置、数据、报告仍以 exe 所在目录为基准
-
-## 分享前脱敏清单
-
-`config.json`、`data/`、`reports/` 都可能包含个人数据，对外分享源码或安装包前请逐项确认：
-
-1. 清空 `config.json` 中所有平台的 `session_id`、`cookies`、`account_name`、`platform_user_id`，并把 `pet.x` / `pet.y` 置空
-2. 不要打包或上传 `data/`（含 `data/browser/` 浏览器登录态）、`reports/`、`debug.log`
-3. 删除或重新生成 `dist/` 下的旧安装包与压缩包，避免夹带旧配置
-4. 检查测试、文档与截图中不含真实账号、用户 ID、会话锚点或采集数据
-5. 本项目的 `.gitignore` 已忽略上述运行时文件与本机 `config.json`；对外发布时只保留清空凭据的配置模板
 
 ## 数据文件
 
@@ -253,7 +218,3 @@ python -m PyInstaller --noconfirm --clean --onedir --windowed --name "猪群友�
 - 网页接口结构会变化，解析失败会记录 `ParseError` 并进入冷却，不会静默写入错误数据
 - 小红书已对未登录与自动化请求强制跳登录页，且 headless 浏览器会触发风控（`error_code 300012`），因此该平台固定使用**真实 Chromium 渲染通道**：每轮采集启动一个离屏浏览器窗口（持久化 profile 位于 `data/browser/xiaohongshu/`），在页面内解包 Vue state 取数，并按 `note_detail_limit` 打开笔记详情补齐评论/收藏/分享。通道内所有停留均带随机抖动并放慢节奏，以接近真人浏览；HTTP 直连仅作为 playwright 未安装时的兜底
 - 小红书只采集主页「笔记」tab 中本人发布的作品，不采集收藏、点赞过的他人笔记
-
-## 开发技能库（可选）
-
-`skills-main` 的技能仍保留在项目级 `.trae/skills/`，仅供开发时参考，运行时不读取、不参与对话或采集。升级时把 `skills-main/skills/` 下新增或改动的目录复制到 `.trae/skills/`，保持目录名与 `SKILL.md` 中的 `name` 一致。
