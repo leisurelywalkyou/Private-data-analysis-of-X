@@ -9,17 +9,20 @@
 from __future__ import annotations
 
 import html
+import os
 import queue
 import re
+import subprocess
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from ..core import analysis, report
+from ..core import analysis, filesearch, report, schedule
 from ..core.collector import make_store
 from ..core.config import get_tz, load_config, report_dir, save_config
 from ..core.scheduler import MultiCollectScheduler
@@ -29,8 +32,8 @@ from .theme import (DOWN, FONT, FONT_DISPLAY, FONT_EYEBROW, FONT_LABEL,
                     FONT_MEDIUM, FONT_MONO_SMALL, FONT_NUM_BIG, FONT_NUM_MID,
                     FONT_SMALL, FONT_TITLE, GOLD, HAIRLINE, HAIRLINE_SOFT, INK, INK_SOFT,
                     MUTED, PAPER, PAPER_2, PAPER_3, PAPER_4, TEAL, Toggle, UP,
-                    VERMILION, NavItem, Pill, ScopeRow, Toast, action_button,
-                    apply_style, card, eyebrow, rule, vrule)
+                    VERMILION, Field, NavItem, Pill, ScopeRow, Toast, action_button,
+                    apply_style, card, center_window, eyebrow, rule, vrule)
 
 TONE = {"muted": MUTED, "busy": GOLD, "ok": TEAL, "error": VERMILION}
 METRIC_LABELS = {"likes": "赞", "comments": "评论", "shares": "转发",
@@ -102,8 +105,8 @@ class App:
     # ---------- 外壳 ----------
     def build_ui(self):
         self.root.title("x 观测台 · 账号数据监控")
-        self.root.geometry("1280x880")
-        self.root.minsize(1120, 870)
+        self.root.geometry("1280x930")
+        self.root.minsize(1120, 930)
         self.root.configure(bg=PAPER)
         apply_style(self.root)
 
@@ -139,8 +142,9 @@ class App:
         tk.Label(inner, text="视图", bg=PAPER, fg=MUTED, font=FONT_EYEBROW,
                  anchor="w").pack(anchor="w", pady=(0, 4))
         nav_items = (("overview", "01", "观测台"), ("monitor", "02", "运行监控"),
-                     ("analytics", "03", "数据分析"), ("reports", "04", "评估报告"),
-                     ("settings", "05", "设置"))
+                     ("schedule", "03", "本周计划"), ("files", "04", "文件检索"),
+                     ("analytics", "05", "数据分析"), ("reports", "06", "评估报告"),
+                     ("settings", "07", "设置"))
         self.nav_items: dict[str, NavItem] = {}
         for key, index, title in nav_items:
             item = NavItem(inner, index, title, command=lambda k=key: self.show_page(k))
@@ -206,12 +210,15 @@ class App:
 
         self.overview = OverviewPage(host, self)
         self.monitor = MonitorPage(host, self)
+        self.schedule = SchedulePage(host, self)
+        self.files = FileSearchPage(host, self)
         self.analytics = AnalyticsPage(host, self)
         self.reports = ReportsPage(host, self)
         self.settings_page = SettingsPage(host, self.cfg,
                                           on_saved=self.on_settings_saved,
                                           on_data_cleared=self.on_data_cleared)
         self.pages = {"overview": self.overview, "monitor": self.monitor,
+                      "schedule": self.schedule, "files": self.files,
                       "analytics": self.analytics, "reports": self.reports,
                       "settings": self.settings_page}
         for page in self.pages.values():
@@ -251,9 +258,11 @@ class App:
             item.set_active(name == key)
         labels = {"overview": ("01", "观测台", "OVERVIEW"),
                   "monitor": ("02", "运行监控", "RUN LOG"),
-                  "analytics": ("03", "数据分析", "ANALYTICS"),
-                  "reports": ("04", "评估报告", "REPORTS"),
-                  "settings": ("05", "设置", "SETTINGS")}
+                  "schedule": ("03", "本周计划", "WEEKLY PLAN"),
+                  "files": ("04", "文件检索", "FILE FINDER"),
+                  "analytics": ("05", "数据分析", "ANALYTICS"),
+                  "reports": ("06", "评估报告", "REPORTS"),
+                  "settings": ("07", "设置", "SETTINGS")}
         index, title, latin = labels[key]
         self.crumb.configure(text=f"{index} · {title}   /   {latin}")
         page = self.pages[key]
@@ -1316,8 +1325,819 @@ class MonitorPage(tk.Frame):
         self.app.toast("事件日志已清空", "muted")
 
 
+class SchedulePage(tk.Frame):
+    """03 本周计划：7 天 × 6 个时段，支持备注内自定义时间区间。"""
+
+    LEFT = 96
+    TOP = 50
+
+    def __init__(self, parent, app: App):
+        super().__init__(parent, bg=PAPER)
+        self.app = app
+        self.tasks: dict[str, dict] = {}
+        self.build()
+
+    def build(self):
+        head = tk.Frame(self, bg=PAPER)
+        head.pack(fill="x")
+        left = tk.Frame(head, bg=PAPER)
+        left.pack(side="left", anchor="n")
+        eyebrow(left, "Weekly Plan · 本周分时段任务").pack(anchor="w")
+        tk.Label(left, text="本周计划", bg=PAPER, fg=INK, font=FONT_TITLE,
+                 anchor="w").pack(anchor="w", pady=(3, 0))
+        self.sub_lbl = tk.Label(left, text="", bg=PAPER, fg=MUTED,
+                                font=FONT_SMALL, anchor="w")
+        self.sub_lbl.pack(anchor="w", pady=(3, 0))
+        action_button(head, "刷新", self.load).pack(side="right", anchor="n")
+
+        tip = tk.Frame(self, bg=PAPER_2, highlightthickness=1,
+                       highlightbackground=HAIRLINE)
+        tip.pack(fill="x", pady=(12, 10))
+        tk.Label(tip, text="点击时段格子填写任务与可选的自定义时间；桌宠会在开始前 "
+                           f"{schedule.LEAD_MINUTES} 分钟提醒一次，到点时再提醒一次。",
+                 bg=PAPER_2, fg=INK_SOFT, font=FONT_SMALL, anchor="w").pack(
+            fill="x", padx=12, pady=8)
+
+        body = tk.Frame(self, bg=HAIRLINE, padx=1, pady=1)
+        body.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(body, bg=PAPER_2, highlightthickness=0,
+                                cursor="hand2")
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", lambda _e: self.redraw())
+        self.canvas.bind("<Button-1>", self.on_click)
+        self.font_small = tkfont.Font(font=FONT_SMALL)
+
+        self.load()
+
+    def on_show(self):
+        self.load()
+
+    def load(self):
+        self.tasks = schedule.load(self.app.cfg)
+        start, end = schedule.week_range(datetime.now())
+        total = sum(len(items) for items in self.tasks.values())
+        self.sub_lbl.configure(
+            text=f"本周 {start:%m-%d} — {end:%m-%d} · {total} 个任务")
+        self.redraw()
+
+    def metrics(self):
+        width = max(self.canvas.winfo_width(), 1)
+        height = max(self.canvas.winfo_height(), 1)
+        col_w = (width - self.LEFT - 4) / 7
+        row_h = (height - self.TOP - 4) / len(schedule.SLOTS)
+        return width, height, col_w, row_h
+
+    def redraw(self):
+        cv = self.canvas
+        cv.delete("all")
+        width, height, col_w, row_h = self.metrics()
+        if width < 360 or height < 260:
+            return
+        now = datetime.now()
+        dates = schedule.week_dates(now)
+        for index, day in enumerate(schedule.WEEKDAYS):
+            x = self.LEFT + col_w * index
+            today = dates[index].date() == now.date()
+            cv.create_text(x + col_w / 2, self.TOP / 2,
+                           text=f"{day}\n{dates[index]:%m-%d}",
+                           fill=VERMILION if today else MUTED,
+                           font=FONT_LABEL, justify="center")
+        for slot, spec in enumerate(schedule.SLOTS):
+            y = self.TOP + row_h * slot
+            cv.create_text(
+                self.LEFT - 12, y + row_h / 2,
+                text=f"{spec['label']}\n"
+                     f"{schedule.format_clock(spec['start'])}-"
+                     f"{schedule.format_clock(spec['end'])}",
+                fill=MUTED, font=FONT_LABEL, anchor="e", justify="right")
+        for slot in range(len(schedule.SLOTS) + 1):
+            y = self.TOP + row_h * slot
+            cv.create_line(self.LEFT, y, width - 4, y, fill=HAIRLINE_SOFT)
+        for index in range(8):
+            x = self.LEFT + col_w * index
+            cv.create_line(x, self.TOP, x, height - 4, fill=HAIRLINE_SOFT)
+        for slot in range(len(schedule.SLOTS)):
+            for day in range(7):
+                items = self.tasks.get(f"{day}:{slot}") or []
+                if not items:
+                    continue
+                x = self.LEFT + col_w * day
+                y = self.TOP + row_h * slot
+                cv.create_rectangle(x + 2, y + 2, x + col_w - 2, y + row_h - 2,
+                                    fill=mix(PAPER_2, TEAL, 0.13), outline="")
+                text_y = y + 7
+                for task in items[:3]:
+                    prefix = f"{task['start']} " if task["start"] else ""
+                    text_x = x + 8
+                    if prefix:
+                        cv.create_text(text_x, text_y, text=prefix, fill=GOLD,
+                                       font=FONT_SMALL, anchor="nw")
+                        text_x += self.font_small.measure(prefix)
+                    cv.create_text(
+                        text_x, text_y,
+                        text=self.fit_line(task["title"],
+                                           x + col_w - 8 - text_x),
+                        fill=TEAL, font=FONT_SMALL, anchor="nw")
+                    text_y += 15
+                if len(items) > 3:
+                    cv.create_text(x + 8, text_y, text=f"+{len(items) - 3} 项",
+                                   fill=MUTED, font=FONT_LABEL, anchor="nw")
+        if 0 <= now.weekday() < 7:
+            x = self.LEFT + col_w * now.weekday()
+            y = self.TOP + row_h * schedule.current_slot(now)
+            cv.create_rectangle(x, y, x + col_w, y + row_h,
+                                outline=VERMILION, width=1)
+
+    def fit_line(self, text: str, width: float) -> str:
+        text = " ".join(str(text).split())
+        width = max(20.0, width)
+        if self.font_small.measure(text) <= width:
+            return text
+        while text and self.font_small.measure(text + "…") > width:
+            text = text[:-1]
+        return text.rstrip() + "…"
+
+    def on_click(self, event):
+        _width, _height, col_w, row_h = self.metrics()
+        if event.x < self.LEFT or event.y < self.TOP:
+            return
+        day = int((event.x - self.LEFT) // col_w)
+        slot = int((event.y - self.TOP) // row_h)
+        if 0 <= day <= 6 and 0 <= slot < len(schedule.SLOTS):
+            ScheduleSlotDialog(self.app, day, slot, self.load)
+
+
+class ScheduleSlotDialog(tk.Toplevel):
+    """同一时段的多任务编辑器，窗口位于屏幕中央。"""
+
+    WIDTH = 720
+    HEIGHT = 740
+
+    def __init__(self, app: App, day: int, slot: int, on_changed):
+        super().__init__(app.root)
+        self.app = app
+        self.day, self.slot = day, slot
+        self.on_changed = on_changed
+        self.tasks: dict[str, dict] = {}
+        self.editing_id: str | None = None
+        self.title("编辑本周任务 · x 观测台")
+        self.configure(bg=PAPER)
+        self.resizable(False, False)
+        self.transient(app.root)
+        self.grab_set()
+        apply_style(self)
+
+        tk.Frame(self, bg=INK, height=4).pack(fill="x")
+        page = tk.Frame(self, bg=PAPER, padx=22, pady=14)
+        page.pack(fill="both", expand=True)
+        tk.Label(page, text=f"{schedule.WEEKDAYS[day]} · {schedule.slot_summary(slot)}",
+                 bg=PAPER, fg=INK, font=FONT_TITLE, anchor="w").pack(fill="x")
+        tk.Label(page, text="同一时段可添加多个任务，每个任务可单独设置标题、时间与备注。",
+                 bg=PAPER, fg=MUTED, font=FONT_SMALL, anchor="w").pack(
+            fill="x", pady=(3, 10))
+
+        list_card = card(page)
+        list_card.pack(fill="x")
+        list_inner = tk.Frame(list_card, bg=PAPER_2, padx=10, pady=8)
+        list_inner.pack(fill="both", expand=True)
+        tree_wrap = tk.Frame(list_inner, bg=PAPER_2)
+        tree_wrap.pack(fill="both", expand=True)
+        tree_wrap.columnconfigure(0, weight=1)
+        tree_wrap.rowconfigure(0, weight=1)
+        self.tree = ttk.Treeview(tree_wrap, columns=("time", "title", "note"),
+                                 show="headings", selectmode="browse", height=6)
+        for key, label, width, anchor in (
+                ("time", "时间", 110, "w"), ("title", "标题", 150, "w"),
+                ("note", "备注", 330, "w")):
+            self.tree.heading(key, text=label, anchor=anchor)
+            self.tree.column(key, width=width, anchor=anchor,
+                             stretch=(key == "note"))
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(tree_wrap, orient="vertical",
+                               command=self.tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.bind("<<TreeviewSelect>>", self._load_selected)
+        self.tree.tag_configure("odd", background=PAPER_2)
+        self.tree.tag_configure("even", background=PAPER_4)
+
+        bar = tk.Frame(list_inner, bg=PAPER_2)
+        bar.pack(fill="x", pady=(8, 0))
+        action_button(bar, "新增任务", self.new_task, "secondary").pack(side="left")
+        action_button(bar, "删除选中", self.delete_task, "ghost",
+                      fg=VERMILION).pack(side="left", padx=(6, 0))
+        self.count_lbl = tk.Label(bar, text="", bg=PAPER_2, fg=MUTED,
+                                  font=FONT_SMALL)
+        self.count_lbl.pack(side="right")
+
+        rule(page).pack(fill="x", pady=(12, 10))
+        self.form_title = tk.Label(page, text="新增任务", bg=PAPER, fg=INK,
+                                   font=FONT_MEDIUM, anchor="w")
+        self.form_title.pack(fill="x")
+
+        form = tk.Frame(page, bg=PAPER)
+        form.pack(fill="x", pady=(6, 0))
+        form.columnconfigure(0, weight=2)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(2, weight=1)
+        self.title_var = tk.StringVar()
+        self.start_var = tk.StringVar()
+        self.end_var = tk.StringVar()
+        self.title_field = Field(form, "简要标题（必填）", self.title_var, width=20)
+        self.title_field.grid(row=0, column=0, sticky="ew", padx=(0, 14))
+        Field(form, "开始 HH:MM", self.start_var, width=8).grid(
+            row=0, column=1, sticky="ew", padx=(0, 14))
+        Field(form, "结束 HH:MM", self.end_var, width=8).grid(
+            row=0, column=2, sticky="ew")
+        lower, upper = schedule.slot_bounds(slot)
+        tk.Label(page, text=f"自定义时间可留空，默认使用时段范围 "
+                           f"{schedule.format_clock(lower)}-{schedule.format_clock(upper)}；"
+                           "同一时段内可设置多个相同或不同时间的任务。",
+                 bg=PAPER, fg=MUTED, font=FONT_SMALL, anchor="w",
+                 justify="left").pack(fill="x", pady=(4, 0))
+        tk.Label(page, text="备注", bg=PAPER, fg=MUTED, font=FONT_SMALL,
+                 anchor="w").pack(fill="x", pady=(8, 2))
+        self.note = tk.Text(page, height=3, bd=0, relief="flat", bg=PAPER_2,
+                            fg=INK, insertbackground=INK, font=FONT,
+                            highlightthickness=1, highlightbackground=HAIRLINE,
+                            highlightcolor=VERMILION, wrap="word", padx=8, pady=6)
+        self.note.pack(fill="both", expand=True)
+        self.error_lbl = tk.Label(page, text="", bg=PAPER, fg=VERMILION,
+                                  font=FONT_SMALL, anchor="w")
+        self.error_lbl.pack(fill="x", pady=(2, 0))
+
+        buttons = tk.Frame(page, bg=PAPER)
+        buttons.pack(fill="x", pady=(8, 0))
+        action_button(buttons, "保存任务", self.save_task, "primary").pack(
+            side="right")
+        action_button(buttons, "关闭", self.destroy, "secondary").pack(
+            side="right", padx=(0, 8))
+        action_button(buttons, "清空表单", self.new_task).pack(side="left")
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.bind("<Control-Return>", lambda _e: self.save_task())
+
+        self.reload()
+        center_window(self, self.WIDTH, self.HEIGHT)
+
+    def reload(self, select_id: str | None = None):
+        tasks = schedule.slot_tasks(self.app.cfg, self.day, self.slot)
+        self.tasks = {task["id"]: task for task in tasks}
+        self.tree.delete(*self.tree.get_children())
+        for index, task in enumerate(tasks):
+            time_text = (f"{task['start']}-{task['end']}"
+                         if task["start"] else "时段内")
+            note = " ".join(task["text"].split())
+            self.tree.insert("", "end", iid=task["id"],
+                             values=(time_text, task["title"], note),
+                             tags=("even" if index % 2 else "odd",))
+        self.count_lbl.configure(text=f"共 {len(tasks)} 个任务")
+        if select_id and select_id in self.tasks:
+            self.tree.selection_set(select_id)
+            self.tree.see(select_id)
+        elif tasks:
+            first = tasks[0]["id"]
+            self.tree.selection_set(first)
+            self.tree.see(first)
+        else:
+            self.new_task()
+
+    def _load_selected(self, _event=None):
+        selection = self.tree.selection()
+        if not selection:
+            return
+        task = self.tasks.get(selection[0])
+        if not task:
+            return
+        self.editing_id = task["id"]
+        self.form_title.configure(text=f"编辑任务 · {task['title']}")
+        self.title_var.set(task["title"])
+        self.start_var.set(task["start"])
+        self.end_var.set(task["end"])
+        self.note.delete("1.0", "end")
+        self.note.insert("1.0", task["text"])
+        self.error_lbl.configure(text="")
+
+    def new_task(self):
+        self.tree.selection_remove(*self.tree.selection())
+        self.editing_id = None
+        self.form_title.configure(text="新增任务")
+        self.title_var.set("")
+        self.start_var.set("")
+        self.end_var.set("")
+        self.note.delete("1.0", "end")
+        self.error_lbl.configure(text="")
+        self.title_field.entry.focus_set()
+
+    def save_task(self):
+        title = self.title_var.get().strip()
+        text = self.note.get("1.0", "end").strip()
+        start = self.start_var.get().strip()
+        end = self.end_var.get().strip()
+        try:
+            if self.editing_id:
+                task = schedule.update_task(
+                    self.app.cfg, self.day, self.slot, self.editing_id,
+                    title, text, start, end)
+            else:
+                task = schedule.add_task(
+                    self.app.cfg, self.day, self.slot, title, text, start, end)
+        except ValueError as e:
+            self.error_lbl.configure(text=str(e))
+            return
+        self.reload(task["id"])
+        self.on_changed()
+        self.error_lbl.configure(text="")
+
+    def delete_task(self):
+        selection = self.tree.selection()
+        if not selection:
+            self.error_lbl.configure(text="先选择要删除的任务")
+            return
+        task = self.tasks.get(selection[0])
+        if not task:
+            return
+        if not messagebox.askyesno("删除任务", f"删除「{task['title']}」？",
+                                   parent=self):
+            return
+        if schedule.delete_task(self.app.cfg, self.day, self.slot, task["id"]):
+            self.reload()
+            self.on_changed()
+
+
+class FileSearchPage(tk.Frame):
+    """04 文件检索：按多个范围顺序扫描，按名称、后缀与类型筛选。"""
+
+    def __init__(self, parent, app: App):
+        super().__init__(parent, bg=PAPER)
+        self.app = app
+        self.scopes: list[dict] = []
+        self.result_paths: dict[str, str] = {}
+        self.result_q: queue.Queue = queue.Queue()
+        self.worker: threading.Thread | None = None
+        self.stop_event = threading.Event()
+        self.search_id = 0
+        self._alive = True
+        self.build()
+        self.bind("<Destroy>", self._on_destroy)
+        self.after(120, self._poll)
+        self._load_scopes()
+
+    def build(self):
+        head = tk.Frame(self, bg=PAPER)
+        head.pack(fill="x")
+        left = tk.Frame(head, bg=PAPER)
+        left.pack(side="left", anchor="n")
+        eyebrow(left, "File Finder · 本机小范围检索").pack(anchor="w")
+        tk.Label(left, text="文件检索", bg=PAPER, fg=INK, font=FONT_TITLE,
+                 anchor="w").pack(anchor="w", pady=(3, 0))
+        tk.Label(left, text="按顺序扫描多个范围，可按名称、后缀与文件类型筛选",
+                 bg=PAPER, fg=MUTED, font=FONT_SMALL, anchor="w").pack(
+            anchor="w", pady=(3, 0))
+
+        body = tk.Frame(self, bg=PAPER)
+        body.pack(fill="both", expand=True, pady=(12, 0))
+        body.columnconfigure(0, minsize=320)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+        left_col = tk.Frame(body, bg=PAPER)
+        left_col.grid(row=0, column=0, sticky="ns")
+        right_col = tk.Frame(body, bg=PAPER)
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(18, 0))
+        self.build_scopes(left_col)
+        self.build_search(right_col)
+
+    def build_scopes(self, parent):
+        box = card(parent)
+        box.pack(fill="both", expand=True)
+        inner = tk.Frame(box, bg=PAPER_2, padx=14, pady=12)
+        inner.pack(fill="both", expand=True)
+        tk.Label(inner, text="检索范围", bg=PAPER_2, fg=INK,
+                 font=FONT_MEDIUM, anchor="w").pack(anchor="w")
+        tk.Label(inner, text="按列表顺序依次检索", bg=PAPER_2, fg=MUTED,
+                 font=FONT_SMALL, anchor="w").pack(anchor="w", pady=(2, 8))
+
+        list_wrap = tk.Frame(inner, bg=PAPER_2)
+        list_wrap.pack(fill="both", expand=True)
+        list_wrap.columnconfigure(0, weight=1)
+        list_wrap.rowconfigure(0, weight=1)
+        self.scope_tree = ttk.Treeview(
+            list_wrap, columns=("mode", "path"), show="headings",
+            selectmode="browse", height=12)
+        self.scope_tree.heading("mode", text="模式", anchor="w")
+        self.scope_tree.heading("path", text="文件夹", anchor="w")
+        self.scope_tree.column("mode", width=90, anchor="w", stretch=False)
+        self.scope_tree.column("path", width=380, anchor="w", stretch=True)
+        self.scope_tree.grid(row=0, column=0, sticky="nsew")
+        yscroll = ttk.Scrollbar(list_wrap, orient="vertical",
+                                command=self.scope_tree.yview)
+        yscroll.grid(row=0, column=1, sticky="ns")
+        hscroll = ttk.Scrollbar(list_wrap, orient="horizontal",
+                                command=self.scope_tree.xview)
+        hscroll.grid(row=1, column=0, sticky="ew")
+        self.scope_tree.configure(yscrollcommand=yscroll.set,
+                                  xscrollcommand=hscroll.set)
+        self.scope_tree.tag_configure("missing", foreground=VERMILION)
+        self.scope_tree.tag_configure("dragging", background=PAPER_3)
+        self.scope_tree.configure(cursor="hand2")
+        self._drag_start = None
+        self._dragging = False
+        self._drag_iid = None
+        self.scope_tree.bind("<ButtonPress-1>", self._scope_press)
+        self.scope_tree.bind("<B1-Motion>", self._scope_drag)
+        self.scope_tree.bind("<ButtonRelease-1>", self._scope_release)
+        self.scope_tree.bind("<Button-3>", self._scope_menu)
+        self.scope_menu = tk.Menu(
+            self, tearoff=0, font=FONT, bg=PAPER_2, fg=INK,
+            activebackground=INK, activeforeground=PAPER_2,
+            activeborderwidth=0, bd=0, relief="flat", selectcolor=PAPER_2,
+            postcommand=self._refresh_scope_menu)
+        self.scope_menu.add_command(label="切换范围模式",
+                                    command=self.toggle_scope_mode)
+        self.scope_menu.add_separator()
+        self.scope_menu.add_command(label="移除", command=self.remove_scope)
+
+        action_button(inner, "添加文件夹", self.add_scope, "secondary").pack(
+            fill="x", pady=(10, 6))
+        row = tk.Frame(inner, bg=PAPER_2)
+        row.pack(fill="x")
+        action_button(row, "移除", self.remove_scope, "ghost",
+                      fg=VERMILION).pack(side="right")
+        tk.Label(inner, text="点击左侧「模式」列切换仅本级/含子文件夹；"
+                            "拖拽行调整检索优先级；右键可删除。新范围默认包含子文件夹。",
+                 bg=PAPER_2, fg=MUTED, font=FONT_SMALL, anchor="w",
+                 justify="left", wraplength=300).pack(fill="x", pady=(8, 0))
+
+    def build_search(self, parent):
+        filters = card(parent)
+        filters.pack(fill="x")
+        inner = tk.Frame(filters, bg=PAPER_2, padx=14, pady=12)
+        inner.pack(fill="x")
+        row = tk.Frame(inner, bg=PAPER_2)
+        row.pack(fill="x")
+        self.name_var = tk.StringVar()
+        self.ext_var = tk.StringVar()
+        self.category_var = tk.StringVar(value="全部")
+        Field(row, "名称包含", self.name_var, width=18).pack(
+            side="left", fill="x", expand=True)
+        Field(row, "后缀（逗号分隔）", self.ext_var, width=14).pack(
+            side="left", padx=(14, 0))
+        type_cell = tk.Frame(row, bg=PAPER_2)
+        type_cell.pack(side="left", padx=(14, 0))
+        tk.Label(type_cell, text="文件类型", bg=PAPER_2, fg=MUTED,
+                 font=FONT_SMALL, anchor="w").pack(anchor="w")
+        self.type_box = ttk.Combobox(
+            type_cell, textvariable=self.category_var,
+            values=filesearch.CATEGORY_NAMES, state="readonly", width=9,
+            font=FONT)
+        self.type_box.pack(pady=(5, 0))
+
+        actions = tk.Frame(inner, bg=PAPER_2)
+        actions.pack(fill="x", pady=(12, 0))
+        self.start_btn = action_button(actions, "开始检索", self.start_search,
+                                       "primary")
+        self.start_btn.pack(side="left")
+        self.stop_btn = action_button(actions, "停止", self.stop_search,
+                                      "secondary")
+        self.stop_btn.configure(state="disabled")
+        self.stop_btn.pack(side="left", padx=(8, 0))
+        action_button(actions, "清空结果", self.clear_results, "ghost").pack(
+            side="left", padx=(4, 0))
+        self.status_lbl = tk.Label(actions, text="尚未检索", bg=PAPER_2,
+                                   fg=MUTED, font=FONT_SMALL, anchor="e")
+        self.status_lbl.pack(side="right")
+
+        results = card(parent)
+        results.pack(fill="both", expand=True, pady=(12, 0))
+        result_inner = tk.Frame(results, bg=PAPER_2)
+        result_inner.pack(fill="both", expand=True)
+        toolbar = tk.Frame(result_inner, bg=PAPER_2, padx=12, pady=8)
+        toolbar.pack(fill="x")
+        self.count_lbl = tk.Label(toolbar, text="共 0 条", bg=PAPER_2, fg=MUTED,
+                                  font=FONT_SMALL, anchor="w")
+        self.count_lbl.pack(side="left")
+        action_button(toolbar, "复制路径", self.copy_path).pack(side="right")
+        action_button(toolbar, "打开所在文件夹", self.reveal_selected).pack(
+            side="right", padx=(0, 8))
+        action_button(toolbar, "打开文件", self.open_selected, "secondary").pack(
+            side="right", padx=(0, 8))
+
+        table = tk.Frame(result_inner, bg=HAIRLINE, padx=1, pady=1)
+        table.pack(fill="both", expand=True)
+        tree_wrap = tk.Frame(table, bg=PAPER_2)
+        tree_wrap.pack(fill="both", expand=True)
+        tree_wrap.columnconfigure(0, weight=1)
+        tree_wrap.rowconfigure(0, weight=1)
+        self.tree = ttk.Treeview(
+            tree_wrap, columns=("name", "category", "ext", "size", "mtime", "path"),
+            show="headings", selectmode="browse")
+        for key, label, width, anchor in (
+                ("name", "文件名", 180, "w"), ("category", "类型", 60, "w"),
+                ("ext", "后缀", 50, "w"), ("size", "大小", 70, "e"),
+                ("mtime", "修改时间", 140, "w"), ("path", "所在目录", 300, "w")):
+            self.tree.heading(key, text=label, anchor=anchor)
+            self.tree.column(key, width=width, anchor=anchor,
+                             stretch=(key == "path"))
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(tree_wrap, orient="vertical",
+                               command=self.tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        hscroll = ttk.Scrollbar(tree_wrap, orient="horizontal",
+                                command=self.tree.xview)
+        hscroll.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=hscroll.set)
+        self.tree.bind("<Double-1>", lambda _e: self.open_selected())
+        self.tree.bind("<Return>", lambda _e: self.open_selected())
+        self.tree.tag_configure("odd", background=PAPER_2)
+        self.tree.tag_configure("even", background=PAPER_4)
+
+    # ---------- 范围 ----------
+    def _load_scopes(self):
+        self.scopes = filesearch.load_scopes(self.app.cfg)
+        self._render_scopes()
+
+    def _render_scopes(self):
+        self.scope_tree.delete(*self.scope_tree.get_children())
+        for index, item in enumerate(self.scopes):
+            path = item["path"]
+            mode = "含子文件夹" if item.get("recursive", True) else "仅本级"
+            tags = () if Path(path).is_dir() else ("missing",)
+            self.scope_tree.insert("", "end", iid=str(index),
+                                   values=(mode, path), tags=tags)
+
+    def _save_scopes(self):
+        filesearch.save_scopes(self.app.cfg, self.scopes)
+
+    def _selected_scope(self) -> int | None:
+        selection = self.scope_tree.selection()
+        return int(selection[0]) if selection else None
+
+    def _select_scope(self, index: int):
+        iid = str(index)
+        self.scope_tree.selection_set(iid)
+        self.scope_tree.focus(iid)
+        self.scope_tree.see(iid)
+
+    def _scope_press(self, event):
+        self._drag_start = None
+        self._dragging = False
+        self._drag_iid = None
+        row = self.scope_tree.identify_row(event.y)
+        if not row:
+            return
+        self.scope_tree.selection_set(row)
+        self.scope_tree.focus(row)
+        self._drag_start = (row, self.scope_tree.identify_column(event.x),
+                            event.y)
+
+    def _scope_drag(self, event):
+        if not self._drag_start:
+            return
+        row, column, y0 = self._drag_start
+        if column == "#1":
+            return
+        if not self._dragging:
+            if abs(event.y - y0) < 8:
+                return
+            self._dragging = True
+            self._drag_iid = row
+            self.scope_tree.item(row, tags=("dragging",))
+            self.scope_tree.configure(cursor="fleur")
+        target = self.scope_tree.identify_row(event.y)
+        if not target:
+            children = self.scope_tree.get_children()
+            target = children[-1] if children else ""
+        if target and target != row:
+            index = self.scope_tree.index(target)
+            self.scope_tree.move(row, "", index)
+            self.scope_tree.see(row)
+
+    def _scope_release(self, event):
+        if not self._drag_start:
+            return
+        row, column, y0 = self._drag_start
+        dragging = self._dragging
+        drag_iid = self._drag_iid
+        self._drag_start = None
+        self._dragging = False
+        self._drag_iid = None
+        self.scope_tree.configure(cursor="hand2")
+        if dragging and drag_iid:
+            order = [int(iid) for iid in self.scope_tree.get_children()]
+            old = self.scopes
+            self.scopes = [old[index] for index in order]
+            self._save_scopes()
+            self._render_scopes()
+            self._select_scope(order.index(int(drag_iid)))
+            self.app.toast("检索优先级已更新", "ok")
+        elif column == "#1" and abs(event.y - y0) <= 4:
+            self.toggle_scope_mode(int(row))
+
+    def _scope_menu(self, event):
+        row = self.scope_tree.identify_row(event.y)
+        if row:
+            self.scope_tree.selection_set(row)
+        try:
+            self.scope_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.scope_menu.grab_release()
+
+    def _refresh_scope_menu(self):
+        index = self._selected_scope()
+        if index is None or not (0 <= index < len(self.scopes)):
+            self.scope_menu.entryconfigure(0, label="切换范围模式",
+                                           state="disabled")
+            return
+        current = self.scopes[index].get("recursive", True)
+        self.scope_menu.entryconfigure(
+            0, label="改为仅当前文件夹" if current else "改为包含子文件夹",
+            state="normal")
+
+    def add_scope(self):
+        path = filedialog.askdirectory(parent=self.winfo_toplevel(),
+                                       title="添加检索范围")
+        if not path:
+            return
+        path = os.path.abspath(path)
+        key = os.path.normcase(path)
+        if any(os.path.normcase(os.path.abspath(item["path"])) == key
+               for item in self.scopes):
+            self.app.toast("该范围已在列表中", "busy")
+            return
+        self.scopes.append({"path": path, "recursive": True})
+        self._save_scopes()
+        self._render_scopes()
+        self._select_scope(len(self.scopes) - 1)
+
+    def toggle_scope_mode(self, index: int | None = None):
+        if index is None:
+            index = self._selected_scope()
+        if index is None or not (0 <= index < len(self.scopes)):
+            self.app.toast("先选择一个检索范围", "busy")
+            return
+        item = self.scopes[index]
+        item["recursive"] = not item.get("recursive", True)
+        self._save_scopes()
+        self._render_scopes()
+        self._select_scope(index)
+        self.app.toast("已切换为：" + ("包含子文件夹" if item["recursive"]
+                                      else "仅当前文件夹"), "ok")
+
+    def remove_scope(self):
+        index = self._selected_scope()
+        if index is None:
+            self.app.toast("先选择一个检索范围", "busy")
+            return
+        self.scopes.pop(index)
+        self._save_scopes()
+        self._render_scopes()
+        if self.scopes:
+            self._select_scope(min(index, len(self.scopes) - 1))
+
+    # ---------- 检索 ----------
+    def start_search(self):
+        if self.worker and self.worker.is_alive():
+            self.app.toast("正在检索，请稍候", "busy")
+            return
+        if not self.scopes:
+            self.app.toast("请先添加检索范围", "busy")
+            return
+        self._clear_results()
+        self.stop_event = threading.Event()
+        self.search_id += 1
+        search_id = self.search_id
+        self.status_lbl.configure(text=f"正在检索 {len(self.scopes)} 个范围…",
+                                  fg=GOLD)
+        self.start_btn.configure(state="disabled")
+        self.stop_btn.configure(state="normal")
+        self.worker = threading.Thread(
+            target=self._run_search,
+            args=(list(self.scopes), self.name_var.get().strip(),
+                  filesearch.parse_extensions(self.ext_var.get()),
+                  self.category_var.get(), self.stop_event, search_id),
+            daemon=True)
+        self.worker.start()
+
+    def _run_search(self, scopes, name, extensions, category, stop_event, search_id):
+        try:
+            results = filesearch.search(
+                scopes, name=name, extensions=extensions, category=category,
+                stop_event=stop_event)
+            self.result_q.put(("done", results, stop_event.is_set(), search_id))
+        except Exception as e:
+            self.result_q.put(("error", f"{type(e).__name__}: {e}", search_id))
+
+    def stop_search(self):
+        if self.worker and self.worker.is_alive():
+            self.stop_event.set()
+            self.status_lbl.configure(text="正在停止…", fg=GOLD)
+
+    def _poll(self):
+        if not self._alive:
+            return
+        try:
+            while True:
+                event = self.result_q.get_nowait()
+                if event[0] == "done":
+                    if event[3] == self.search_id:
+                        self._show_results(event[1], event[2])
+                elif event[2] == self.search_id:
+                    self._search_failed(event[1])
+        except queue.Empty:
+            pass
+        self.after(120, self._poll)
+
+    def _show_results(self, results: list[dict], stopped: bool):
+        self._clear_results()
+        for index, item in enumerate(results):
+            iid = f"r{index}"
+            self.tree.insert("", "end", iid=iid, values=(
+                item["name"], item["category"], item["ext"] or "—",
+                self.fmt_size(item["size"]),
+                datetime.fromtimestamp(item["mtime"]).strftime("%Y-%m-%d %H:%M"),
+                str(Path(item["path"]).parent)),
+                tags=("even" if index % 2 else "odd",))
+            self.result_paths[iid] = item["path"]
+        self.count_lbl.configure(text=f"共 {len(results)} 条")
+        self.start_btn.configure(state="normal")
+        self.stop_btn.configure(state="disabled")
+        if stopped:
+            text, tone = f"已停止：显示 {len(results)} 个文件", MUTED
+        elif results:
+            text, tone = f"检索完成：{len(results)} 个文件", TEAL
+        else:
+            text, tone = "没有匹配的文件", MUTED
+        self.status_lbl.configure(text=text, fg=tone)
+
+    def _search_failed(self, message: str):
+        self.start_btn.configure(state="normal")
+        self.stop_btn.configure(state="disabled")
+        self.status_lbl.configure(text=f"检索失败：{message}", fg=VERMILION)
+        self.app.toast(f"检索失败：{message}", "error", 6000)
+
+    def clear_results(self):
+        if self.worker and self.worker.is_alive():
+            self.stop_event.set()
+            self.start_btn.configure(state="normal")
+            self.stop_btn.configure(state="disabled")
+        self.search_id += 1
+        self._clear_results()
+        self.status_lbl.configure(text="已清空", fg=MUTED)
+
+    def _clear_results(self):
+        self.tree.delete(*self.tree.get_children())
+        self.result_paths.clear()
+        self.count_lbl.configure(text="共 0 条")
+
+    # ---------- 结果操作 ----------
+    def _selected_path(self) -> str | None:
+        selection = self.tree.selection()
+        return self.result_paths.get(selection[0]) if selection else None
+
+    def open_selected(self):
+        path = self._selected_path()
+        if not path:
+            self.app.toast("先选择一个文件", "busy")
+            return
+        try:
+            os.startfile(path)
+        except OSError as e:
+            self.app.toast(f"打开失败：{e}", "error", 6000)
+
+    def reveal_selected(self):
+        path = self._selected_path()
+        if not path:
+            self.app.toast("先选择一个文件", "busy")
+            return
+        try:
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        except OSError as e:
+            self.app.toast(f"打开文件夹失败：{e}", "error", 6000)
+
+    def copy_path(self):
+        path = self._selected_path()
+        if not path:
+            self.app.toast("先选择一个文件", "busy")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(path)
+        self.app.toast("文件路径已复制", "ok")
+
+    @staticmethod
+    def fmt_size(size: float) -> str:
+        value = float(size)
+        for unit in ("B", "KB", "MB", "GB"):
+            if value < 1024 or unit == "GB":
+                return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+            value /= 1024
+        return f"{value:.1f} GB"
+
+    def _on_destroy(self, _event=None):
+        self._alive = False
+        self.stop_event.set()
+
+
 class AnalyticsPage(tk.Frame):
-    """03 数据分析：区间 KPI、热力图与四张曲线图。"""
+    """05 数据分析：区间 KPI、热力图与四张曲线图。"""
 
     def __init__(self, parent, app: App):
         super().__init__(parent, bg=PAPER)
@@ -1602,7 +2422,7 @@ class AnalyticsPage(tk.Frame):
 
 
 class ReportsPage(tk.Frame):
-    """04 评估报告：生成、历史列表与应用内预览。"""
+    """06 评估报告：生成、历史列表与应用内预览。"""
 
     def __init__(self, parent, app: App):
         super().__init__(parent, bg=PAPER)
@@ -1846,6 +2666,7 @@ class ReportPreview(tk.Toplevel):
         action_button(foot, "浏览器打开", self.open_browser).pack(side="right")
         action_button(foot, "关闭", self.destroy, "secondary").pack(
             side="right", padx=(0, 8))
+        center_window(self, 780, 560)
 
     def read_kpis(self):
         try:

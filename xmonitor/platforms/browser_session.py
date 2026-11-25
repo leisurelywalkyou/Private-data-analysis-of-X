@@ -15,20 +15,14 @@ from . import load
 
 DOMAINS = {
     "x": (".x.com", ".twitter.com"),
-    "instagram": (".instagram.com",),
     "xiaohongshu": (".xiaohongshu.com",),
-    "weibo": (".weibo.com", ".weibo.cn"),
     "pixiv": (".pixiv.net",),
-    "tiktok": (".tiktok.com",),
 }
 
 LOGIN_URLS = {
     "x": "https://x.com/login",
-    "instagram": "https://www.instagram.com/accounts/login/",
     "xiaohongshu": "https://www.xiaohongshu.com/login",
-    "weibo": "https://weibo.com/login.php",
     "pixiv": "https://accounts.pixiv.net/login.php?lang=zh",
-    "tiktok": "https://www.tiktok.com/login",
 }
 
 

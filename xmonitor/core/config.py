@@ -67,15 +67,12 @@ DEFAULTS = {
     },
     "platforms": {
         "x": _platform(True, 3),
-        "instagram": _platform(False, 5),
         "xiaohongshu": {**_platform(False, 10), "note_detail_limit": 5,
                         "rate_limit": {"min_interval_seconds": 10,
                                        "max_requests_per_minute": 6}},
-        "weibo": _platform(False, 3),
         "pixiv": {**_platform(False, 2),
                   "rate_limit": {"min_interval_seconds": 2,
                                  "max_requests_per_minute": 30}},
-        "tiktok": _platform(False, 5),
     },
     "pet": {
         "x": None,

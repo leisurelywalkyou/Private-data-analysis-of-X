@@ -10,8 +10,8 @@ _UID = itertools.count(1)
 
 CSS = """
 :root{
-  --paper:#efe9db; --sheet:#faf6ec; --ink:#1e1b16; --ink-soft:#4a4337;
-  --muted:#8a8071; --hair:#ded5c2; --red:#b3402a; --teal:#2f6159; --gold:#a98a4b;
+  --paper:#efe9db; --sheet:#faf6ec; --ink:#1e1b16; --ink-soft:#453f34;
+  --muted:#6f6555; --hair:#ded5c2; --red:#b3402a; --teal:#2f6159; --gold:#9a7d42;
   --serif:"Georgia","Cambria","Songti SC","SimSun","Noto Serif SC",serif;
   --sans:"Segoe UI","Microsoft YaHei UI","PingFang SC",sans-serif;
   --mono:"Consolas","SFMono-Regular","Menlo",monospace;
@@ -25,61 +25,61 @@ body{margin:0;padding:30px 20px 64px;color:var(--ink);font:14px/1.7 var(--sans);
   padding:0 48px 30px;}
 .masthead{padding:40px 0 24px;border-bottom:2px solid var(--ink)}
 .kicker{display:flex;justify-content:space-between;gap:20px;
-  font:10px/1.5 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  font:10.5px/1.5 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
 .kicker b{color:var(--red);font-weight:400}
 h1{font-family:var(--serif);font-size:clamp(34px,5.2vw,54px);line-height:1.04;
   margin:20px 0 10px;font-weight:700;letter-spacing:-.015em}
 h1 .at{color:var(--red);font-weight:400;font-style:italic;font-size:.68em;margin-left:.1em}
-.dek{margin:0;font-size:13.5px;color:var(--ink-soft)}
+.dek{margin:0;font-size:14px;color:var(--ink-soft)}
 .dek .sep{color:var(--hair);margin:0 10px}
 .notice{margin-top:18px;border:1px dashed var(--hair);padding:11px 16px;
-  font:10.5px var(--mono);letter-spacing:.08em;color:var(--muted)}
+  font:11px var(--mono);letter-spacing:.08em;color:var(--muted)}
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--hair)}
 .kpi{padding:24px 20px 22px;border-left:1px solid var(--hair)}
 .kpi:first-child{border-left:0;padding-left:0}
 .kpi .v{font-family:var(--serif);font-size:clamp(24px,3vw,34px);font-weight:700;
   letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
-.kpi .l{margin-top:9px;font:9px/1.5 var(--mono);letter-spacing:.16em;
+.kpi .l{margin-top:9px;font:10px/1.5 var(--mono);letter-spacing:.16em;
   text-transform:uppercase;color:var(--muted)}
 .plate{padding:30px 0 26px;border-bottom:1px solid var(--hair)}
 .plate:last-of-type{border-bottom:0}
 .plate-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
-.idx{font:10px var(--mono);letter-spacing:.14em;color:var(--red)}
-h2{font-family:var(--serif);font-size:19px;font-weight:700;margin:0;letter-spacing:-.01em}
-.meta{font:9px/1.6 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+.idx{font:11px var(--mono);letter-spacing:.14em;color:var(--red)}
+h2{font-family:var(--serif);font-size:20px;font-weight:700;margin:0;letter-spacing:-.01em}
+.meta{font:10px/1.6 var(--mono);letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted);margin-left:auto;text-align:right}
 .heat-scroll{overflow-x:auto}
-.heat{display:grid;grid-template-columns:44px repeat(24,minmax(24px,1fr));
+.heat{display:grid;grid-template-columns:48px repeat(24,minmax(24px,1fr));
   gap:2px;min-width:800px;margin-top:2px}
-.heat .lbl{font:9px var(--mono);color:var(--muted);display:flex;align-items:center;
+.heat .lbl{font:10px var(--mono);color:var(--muted);display:flex;align-items:center;
   justify-content:center;letter-spacing:.04em}
 .heat .lbl.day{justify-content:flex-end;padding-right:8px}
-.cell{height:26px;display:flex;align-items:center;justify-content:center;
-  font:9.5px var(--mono);color:var(--ink)}
-.cell.void{background:transparent;border:1px dashed rgba(138,128,113,.25);
-  color:rgba(138,128,113,.5)}
+.cell{height:27px;display:flex;align-items:center;justify-content:center;
+  font:10px var(--mono);color:var(--ink)}
+.cell.void{background:transparent;border:1px dashed rgba(111,101,85,.28);
+  color:rgba(111,101,85,.55)}
 .legend-heat{display:flex;align-items:center;gap:10px;margin-top:14px;
-  font:9px var(--mono);letter-spacing:.1em;color:var(--muted)}
+  font:10px var(--mono);letter-spacing:.1em;color:var(--muted)}
 .legend-heat .bar{width:160px;height:6px;
   background:linear-gradient(90deg,rgba(179,64,42,.12),rgba(179,64,42,.95))}
 .legend-heat .tail{margin-left:auto;letter-spacing:.12em}
-.caption{margin:14px 0 0;font-size:12px;color:var(--muted);line-height:1.7}
+.caption{margin:14px 0 0;font-size:12.5px;color:var(--muted);line-height:1.7}
 .caption b{color:var(--ink-soft);font-weight:600}
 .chart{margin:2px 0 0}
 .chart svg{width:100%;height:auto;display:block}
-.chart text{font-family:var(--mono);font-size:10px;letter-spacing:.05em;fill:var(--muted)}
+.chart text{font-family:var(--mono);font-size:11px;letter-spacing:.05em;fill:var(--muted)}
 .chart .line{stroke-linejoin:round;stroke-linecap:round}
 .chart .dot{stroke:none}
 .series{display:flex;flex-wrap:wrap;gap:8px 26px;margin:0 0 14px;
-  font:10px var(--mono);color:var(--muted);letter-spacing:.05em}
+  font:11px var(--mono);color:var(--muted);letter-spacing:.05em}
 .series .row{display:flex;align-items:center;gap:8px}
 .series i{display:block;width:18px;height:2px}
 .series .val{color:var(--ink);font-weight:700}
 .empty{border:1px dashed var(--hair);padding:26px;text-align:center;
-  font:10px var(--mono);letter-spacing:.12em;color:var(--muted)}
+  font:11px var(--mono);letter-spacing:.12em;color:var(--muted)}
 .colophon{margin-top:30px;padding-top:16px;border-top:1px solid var(--hair);
   display:flex;justify-content:space-between;gap:24px;
-  font:9px var(--mono);letter-spacing:.1em;color:var(--muted)}
+  font:10px var(--mono);letter-spacing:.1em;color:var(--muted)}
 @media (max-width:760px){
   body{padding:16px 10px 40px}
   .sheet{padding:0 22px 22px}

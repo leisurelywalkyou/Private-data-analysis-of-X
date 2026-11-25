@@ -13,7 +13,7 @@ from .browser_login import BrowserLoginDialog
 from .theme import (FONT, FONT_LABEL, FONT_SMALL,
                     FONT_TITLE, HAIRLINE, INK, INK_SOFT, MUTED, PAPER, PAPER_2,
                     TEAL, VERMILION, CheckRow, Field, ScopeRow, action_button,
-                    apply_style, eyebrow, rule, section_head)
+                    apply_style, center_window, eyebrow, rule, section_head)
 
 PLATFORM_FIELDS = ("enabled", "account_name", "platform_user_id", "session_id",
                    "cookies", "max_posts", "filters")
@@ -25,27 +25,15 @@ SESSION_GUIDES = {
           "开发者工具 → Application → Cookies 复制 auth_token。\n"
           "账号名称：个人主页 handle（不含 @）。\n"
           "用户 ID：无需填写，程序自动解析。"),
-    "instagram": ("获取锚点：点「浏览器登录」自动读取 sessionid；也可在 instagram.com "
-                  "登录后，开发者工具 → Cookies 复制 sessionid。\n"
-                  "账号名称：用户名。\n"
-                  "用户 ID：无需填写，程序自动解析。"),
     "xiaohongshu": ("获取锚点：点「浏览器登录」自动读取 web_session；也可在 xiaohongshu.com "
                     "登录后，开发者工具 → Cookies 复制 web_session。\n"
                     "账号名称：昵称。\n"
                     "用户 ID：个人主页链接 /user/profile/<ID> 中的 ID。"),
-    "weibo": ("获取锚点：点「浏览器登录」自动读取 SUB；也可在 weibo.com 登录后，"
-              "开发者工具 → Cookies 复制 SUB。\n"
-              "账号名称：昵称。\n"
-              "用户 ID：个人主页链接 weibo.com/u/<UID> 中的数字 UID。"),
     "pixiv": ("获取锚点：点「浏览器登录」自动读取 PHPSESSID；也可在 pixiv.net 登录后，"
               "开发者工具 → Cookies 复制 PHPSESSID。\n"
               "账号名称：昵称。\n"
               "用户 ID：个人主页链接 pixiv.net/users/<数字ID> 中的数字；"
               "也可直接粘贴个人主页链接或 pixiv ID，由登录会话自动识别。"),
-    "tiktok": ("获取锚点：点「浏览器登录」自动读取 sessionid 与 tt_chain_token；也可在 tiktok.com "
-               "登录后，开发者工具 → Cookies 复制 sessionid。\n"
-               "账号名称：主页 handle（不含 @）。\n"
-               "用户 ID：无需填写，程序自动解析。"),
 }
 
 
@@ -65,7 +53,7 @@ def _as_int(text: str) -> int | None:
 
 
 class SettingsPage(tk.Frame):
-    """05 设置：左平台列表、右分区表单、底部保存条。"""
+    """07 设置：左平台列表、右分区表单、底部保存条。"""
 
     def __init__(self, parent, cfg: dict, on_saved=None, on_data_cleared=None):
         super().__init__(parent, bg=PAPER)
@@ -639,8 +627,8 @@ class SettingsDialog(tk.Toplevel):
 
         self.title("设置 · x 观测台")
         self.configure(bg=PAPER)
-        self.geometry("1200x800")
-        self.minsize(1080, 780)
+        self.geometry("1200x830")
+        self.minsize(1080, 820)
         self.transient(master)
         self.grab_set()
         apply_style(self)
@@ -650,6 +638,7 @@ class SettingsDialog(tk.Toplevel):
         shell.pack(fill="both", expand=True)
         self.page = SettingsPage(shell, cfg, on_saved=self._handle_saved)
         self.page.pack(fill="both", expand=True)
+        center_window(self, 1200, 830)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
     def _handle_saved(self, updates: dict):

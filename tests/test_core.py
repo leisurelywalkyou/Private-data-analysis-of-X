@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from xmonitor.core import collector, report
+from xmonitor.core import collector, filesearch, report, schedule
 from xmonitor.core.config import load_config
 from xmonitor.core.http import HttpClient, LoginRequired, RateLimited
 from xmonitor.core.scheduler import MultiCollectScheduler
@@ -142,6 +142,113 @@ class StoreTest(unittest.TestCase):
             self.assertFalse(store.account_path.exists())
             self.assertFalse(store.posts_path.exists())
             self.assertFalse(store.runs_path.exists())
+
+
+class ScheduleTest(unittest.TestCase):
+    def test_multiple_tasks_in_slot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"data_dir": tmp}
+            first = schedule.add_task(cfg, 0, 4, "开会", "准备材料",
+                                      "15:30", "16:00")
+            second = schedule.add_task(cfg, 0, 4, "回邮件", "", "15:30", "15:45")
+            tasks = schedule.slot_tasks(cfg, 0, 4)
+            self.assertEqual([task["title"] for task in tasks],
+                             ["开会", "回邮件"])
+            self.assertEqual(len(schedule.load(cfg)["0:4"]), 2)
+            schedule.update_task(cfg, 0, 4, second["id"], "回邮件",
+                                 "回复客户", "", "")
+            self.assertIn(("回邮件", "回复客户"),
+                          [(task["title"], task["text"])
+                           for task in schedule.slot_tasks(cfg, 0, 4)])
+            self.assertTrue(schedule.delete_task(cfg, 0, 4, first["id"]))
+            self.assertEqual(len(schedule.slot_tasks(cfg, 0, 4)), 1)
+
+    def test_day_entries_and_legacy_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"data_dir": tmp}
+            schedule.add_task(cfg, 0, 4, "开会", "准备", "15:30", "16:00")
+            schedule.add_task(cfg, 0, 2, "写文档", "")
+            entries = schedule.day_entries(cfg, 0)
+            self.assertEqual(entries[0]["start_text"], "09:00")
+            self.assertEqual(entries[0]["title"], "写文档")
+            self.assertEqual(entries[1]["start_text"], "15:30")
+            self.assertTrue(entries[1]["custom"])
+            # 旧版单任务格式自动迁移
+            schedule.schedule_path(cfg).write_text(
+                json.dumps({"tasks": {"0-15": {
+                    "text": "旧任务", "start": "15:30", "end": "16:00"}}}),
+                encoding="utf-8")
+            tasks = schedule.load(cfg)
+            self.assertEqual(tasks["0:4"][0]["text"], "旧任务")
+            self.assertEqual(tasks["0:4"][0]["title"], "旧任务")
+
+    def test_week_range_and_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"data_dir": tmp}
+            start, end = schedule.week_range(datetime(2026, 10, 31, 10, 0))
+            self.assertEqual(start, datetime(2026, 10, 26))
+            self.assertEqual(end, datetime(2026, 11, 1))
+            with self.assertRaises(ValueError):
+                schedule.add_task(cfg, 0, 4, "x", "", "16:00", "15:00")
+            with self.assertRaises(ValueError):
+                schedule.add_task(cfg, 0, 4, "", "")
+            self.assertEqual(schedule.parse_clock("9:05"), 545)
+            self.assertIsNone(schedule.parse_clock("25:00"))
+
+
+class FileSearchTest(unittest.TestCase):
+    @staticmethod
+    def _tree(root: Path):
+        (root / "docs").mkdir(parents=True, exist_ok=True)
+        (root / "docs" / "note.txt").write_text("x", encoding="utf-8")
+        (root / "docs" / "report.PDF").write_text("x", encoding="utf-8")
+        (root / "docs" / "pic.PNG").write_text("x", encoding="utf-8")
+        (root / "docs" / "deep").mkdir(exist_ok=True)
+        (root / "docs" / "deep" / "script.py").write_text("x", encoding="utf-8")
+
+    def test_search_filters_order_and_dedupe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            first = base / "first"
+            second = base / "second"
+            self._tree(first)
+            self._tree(second)
+            (second / "docs" / "note.txt").write_text("y", encoding="utf-8")
+            (second / "docs" / "photo.jpg").write_text("y", encoding="utf-8")
+            results = filesearch.search([str(first), str(second)], name="note")
+            self.assertEqual([r["scope_index"] for r in results], [0, 1])
+            images = filesearch.search([str(first), str(second)], category="图片")
+            self.assertEqual({Path(r["path"]).name for r in images},
+                             {"pic.PNG", "photo.jpg"})
+            pdfs = filesearch.search([str(first)], extensions={".pdf"})
+            self.assertEqual([Path(r["path"]).name for r in pdfs], ["report.PDF"])
+            deduped = filesearch.search([str(first), str(first)], name="note")
+            self.assertEqual(len(deduped), 1)
+            shallow = filesearch.search(
+                [{"path": str(first), "recursive": False}], name="script")
+            self.assertEqual(shallow, [])
+            deep = filesearch.search(
+                [{"path": str(first), "recursive": True}], name="script")
+            self.assertEqual(len(deep), 1)
+            self.assertTrue(deep[0]["recursive"])
+
+    def test_extension_and_category_helpers(self):
+        self.assertEqual(filesearch.parse_extensions("pdf, .PNG  jpg；docx"),
+                         {".pdf", ".png", ".jpg", ".docx"})
+        self.assertEqual(filesearch.category_of(".MP4"), "视频")
+        self.assertEqual(filesearch.category_of(""), "其他")
+
+    def test_scope_persistence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"data_dir": tmp}
+            scopes = [{"path": str(Path(tmp) / "a"), "recursive": False},
+                      {"path": str(Path(tmp) / "b"), "recursive": True}]
+            filesearch.save_scopes(cfg, scopes)
+            self.assertEqual(filesearch.load_scopes(cfg), scopes)
+            filesearch.scopes_path(cfg).write_text(
+                json.dumps({"scopes": [str(Path(tmp) / "c")]}), encoding="utf-8")
+            self.assertEqual(filesearch.load_scopes(cfg),
+                             [{"path": str(Path(tmp) / "c"), "recursive": True}])
 
 
 class ReportWriteTest(unittest.TestCase):
@@ -343,61 +450,6 @@ class AdapterParseTest(unittest.TestCase):
         self.assertEqual(snake["saves"], "3")
         self.assertIsNone(normalize_note({}))
 
-    def test_weibo(self):
-        adapter = load("weibo")({"account_name": "博主", "platform_user_id": "100",
-                                 "max_posts": 5}, FakeHttp(
-            json_map={
-                "profile/info": {"data": {"user": {"idstr": "100", "screen_name": "博主",
-                                                   "followers_count": 500,
-                                                   "friends_count": 20,
-                                                   "statuses_count": 90}}},
-                "statuses/mymblog": {"data": {"list": [
-                    {"mid": "m1", "created_at": "1小时前", "text_raw": "<b>hi</b>",
-                     "attitudes_count": 8, "comments_count": 2, "reposts_count": 1}]}},
-            },
-        ))
-        account = adapter.fetch_account()
-        posts = adapter.fetch_posts()
-        self.assertEqual(account["followers"], 500)
-        self.assertEqual(posts[0]["likes"], 8)
-
-    def test_tiktok(self):
-        state = {"__DEFAULT_SCOPE__": {"webapp.user-detail": {
-            "userInfo": {"user": {"id": "1", "uniqueId": "demo", "secUid": "s1",
-                                  "stats": {"followerCount": 1000, "followingCount": 10,
-                                            "videoCount": 20, "heartCount": 5000}},
-                         "itemList": [{"id": "v1", "desc": "hi", "createTime": 1790000000,
-                                       "stats": {"diggCount": 30, "commentCount": 4,
-                                                 "shareCount": 2, "collectCount": 5,
-                                                 "playCount": 1000}}]},
-        }}}
-        html = ('<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">'
-                + json.dumps(state) + "</script>")
-        adapter = load("tiktok")({"account_name": "demo", "max_posts": 5},
-                                 FakeHttp(text_map={"tiktok.com/@demo": html}))
-        account = adapter.fetch_account()
-        posts = adapter.fetch_posts()
-        self.assertEqual(account["followers"], 1000)
-        self.assertEqual(posts[0]["views"], 1000)
-
-    def test_instagram(self):
-        payload = {"data": {"user": {
-            "id": "1", "username": "demo",
-            "edge_followed_by": {"count": 100}, "edge_follow": {"count": 10},
-            "edge_owner_to_timeline_media": {"count": 5, "edges": [{"node": {
-                "id": "m1", "shortcode": "abc", "taken_at_timestamp": 1790000000,
-                "edge_liked_by": {"count": 20}, "edge_media_to_comment": {"count": 3},
-                "is_video": True, "video_view_count": 500,
-                "edge_media_to_caption": {"edges": [{"node": {"text": "hi"}}]}}}]},
-        }}}
-        adapter = load("instagram")({"account_name": "demo", "max_posts": 5},
-                                    FakeHttp(json_map={"web_profile_info": payload}))
-        account = adapter.fetch_account()
-        posts = adapter.fetch_posts()
-        self.assertEqual(account["posts_count"], 5)
-        self.assertEqual(posts[0]["likes"], 20)
-        self.assertEqual(posts[0]["views"], 500)
-
     def test_pixiv(self):
         adapter = load("pixiv")({"account_name": "画师", "platform_user_id": "9",
                                  "max_posts": 5}, FakeHttp(json_map={
@@ -527,8 +579,8 @@ class SessionAnchorTest(unittest.TestCase):
     def test_anchor_names(self):
         self.assertEqual(
             {p: session_cookie_name(p) for p in available()},
-            {"x": "auth_token", "instagram": "sessionid", "xiaohongshu": "web_session",
-             "weibo": "SUB", "pixiv": "PHPSESSID", "tiktok": "sessionid"})
+            {"x": "auth_token", "xiaohongshu": "web_session",
+             "pixiv": "PHPSESSID"})
 
     def test_clean_pasted_value(self):
         self.assertEqual(clean_session_value("pixiv", "PHPSESSID=abc"), "abc")
@@ -547,20 +599,16 @@ class SessionAnchorTest(unittest.TestCase):
         self.assertFalse(has_session({"session_id": "  "}, "pixiv"))
         self.assertTrue(has_session({"cookies": "PHPSESSID=abc; other=1"}, "pixiv"))
         self.assertFalse(has_session({"cookies": "ct0=1"}, "pixiv"))
-        self.assertFalse(has_session({"cookies": "tt_chain_token=1"}, "tiktok"))
-        self.assertTrue(has_session({"cookies": "sessionid=abc; tt_chain_token=1"},
-                                    "tiktok"))
         self.assertTrue(has_session({}, "x"))
 
-    def test_user_id_required_only_three_platforms(self):
+    def test_user_id_required(self):
         required = {p for p in available() if user_id_required(p)}
-        self.assertEqual(required, {"xiaohongshu", "weibo", "pixiv"})
+        self.assertEqual(required, {"xiaohongshu", "pixiv"})
 
     def test_extra_cookie_names(self):
         self.assertEqual(
             {p: extra_cookie_names(p) for p in available()},
-            {"x": ("ct0",), "tiktok": ("tt_chain_token",), "instagram": (),
-             "xiaohongshu": (), "weibo": (), "pixiv": ()})
+            {"x": ("ct0",), "xiaohongshu": (), "pixiv": ()})
 
     def test_session_values_reads_anchor_and_extras(self):
         values = session_values([
@@ -613,7 +661,8 @@ class ConfigTest(unittest.TestCase):
 
 class RegistryTest(unittest.TestCase):
     def test_load_unload(self):
-        self.assertEqual(len(available()), 6)
+        self.assertEqual(len(available()), 3)
+        self.assertEqual(available(), ["x", "xiaohongshu", "pixiv"])
         cls = load("pixiv")
         self.assertEqual(cls.label, "pixiv")
         unload("pixiv")

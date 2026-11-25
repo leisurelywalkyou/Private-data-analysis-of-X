@@ -9,7 +9,8 @@ from tkinter import messagebox
 from ..platforms import load
 from ..platforms.browser_session import BrowserSessionBridge
 from .theme import (FONT_SMALL, FONT_TITLE, HAIRLINE, INK, MUTED, PAPER, PAPER_2,
-                    TEAL, VERMILION, action_button, apply_style, eyebrow, rule)
+                    TEAL, VERMILION, action_button, apply_style, center_window,
+                    eyebrow, rule)
 
 
 class BrowserLoginDialog(tk.Toplevel):
@@ -69,6 +70,7 @@ class BrowserLoginDialog(tk.Toplevel):
         self.bridge = BrowserSessionBridge(platform, profile_dir, self._on_event,
                                            channel=channel)
         self.bridge.start()
+        center_window(self)
         self.after(300, self.poll)
 
     def set_status(self, text: str, tone: str = "muted"):

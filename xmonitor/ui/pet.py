@@ -6,6 +6,7 @@ import math
 import os
 import queue
 import random
+import shutil
 import subprocess
 import sys
 import threading
@@ -13,9 +14,11 @@ import time
 import tkinter as tk
 import tkinter.font as tkfont
 import webbrowser
+from datetime import datetime
 from pathlib import Path
+from tkinter import filedialog, messagebox
 
-from ..core import report
+from ..core import report, schedule
 from ..core.config import (PROJECT_ROOT, RESOURCE_ROOT, get_tz, load_config,
                            save_config)
 from ..core.scheduler import MultiCollectScheduler
@@ -82,6 +85,8 @@ class PetWindow:
         self.anim_job = None
         self.click_job = None
         self.suppress_until = 0.0
+        self.schedule_check = 0.0
+        self.notified: set[str] = set()
 
         self.setup_window()
         apply_style(self.root)
@@ -187,6 +192,10 @@ class PetWindow:
         self.menu.add_command(label="打开观测台", command=self.open_panel)
         self.menu.add_command(label="运行监控",
                               command=lambda: self.open_panel("monitor"))
+        self.menu.add_command(label="本周计划",
+                              command=lambda: self.open_panel("schedule"))
+        self.menu.add_command(label="文件检索",
+                              command=lambda: self.open_panel("files"))
         self.menu.add_separator()
         self.menu.add_command(label="采集全部平台", command=self.collect_all)
         self.report_menu = tk.Menu(self.menu, **menu_opts)
@@ -265,24 +274,28 @@ class PetWindow:
     def rebuild_music_menu(self):
         self.music.rescan()
         self.music_menu.delete(0, "end")
-        if not self.music.tracks:
+        if self.music.tracks:
+            for index, track in enumerate(self.music.tracks):
+                prefix = "当前 · " if index == self.music.index else ""
+                self.music_menu.add_command(
+                    label=f"{prefix}{track.name}",
+                    command=lambda i=index: self.play_track(i))
+            self.music_menu.add_separator()
+            mode = self.music.mode()
+            toggle = {"playing": "暂停", "paused": "继续播放"}.get(mode, "播放")
+            self.music_menu.add_command(label=f"{toggle}当前曲目",
+                                        command=self.toggle_music)
+            self.music_menu.add_command(label="下一首", command=self.next_music)
+            self.music_menu.add_command(label="上一首", command=self.previous_music)
+            self.music_menu.add_command(label="停止", command=self.stop_music)
+        else:
             self.music_menu.add_command(
                 label="（把 mp3 放进 assets/music）", state="disabled")
-            return
-        for index, track in enumerate(self.music.tracks):
-            prefix = "当前 · " if index == self.music.index else ""
-            self.music_menu.add_command(
-                label=f"{prefix}{track.stem}",
-                command=lambda i=index: self.play_track(i))
         self.music_menu.add_separator()
-        mode = self.music.mode()
-        toggle = {"playing": "暂停", "paused": "继续播放"}.get(mode, "播放")
-        self.music_menu.add_command(label=f"{toggle}当前曲目",
-                                    command=self.toggle_music)
-        self.music_menu.add_command(label="下一首", command=self.next_music)
-        self.music_menu.add_command(label="上一首", command=self.previous_music)
-        self.music_menu.add_command(label="停止", command=self.stop_music)
-        self.music_menu.add_separator()
+        self.music_menu.add_command(label="导入音乐…", command=self.import_music)
+        self.music_menu.add_command(
+            label="删除当前曲目", command=self.delete_music,
+            state="normal" if self.music.tracks else "disabled")
         self.music_menu.add_command(label="打开音乐文件夹",
                                     command=self.open_music_folder)
 
@@ -322,8 +335,58 @@ class PetWindow:
         self.music.stop()
         self.say("已停止音乐", 3)
 
+    def import_music(self):
+        paths = filedialog.askopenfilenames(
+            parent=self.root, title="导入音乐",
+            filetypes=[("音频文件", "*.mp3 *.wav"), ("所有文件", "*.*")])
+        if not paths:
+            return
+        MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+        imported = 0
+        skipped = []
+        for raw in paths:
+            source = Path(raw)
+            target = MUSIC_DIR / source.name
+            if target.exists():
+                skipped.append(source.name)
+                continue
+            try:
+                shutil.copy2(source, target)
+                imported += 1
+            except OSError as e:
+                skipped.append(f"{source.name}（{e}）")
+        self.music.rescan()
+        if imported:
+            text = f"已导入 {imported} 首音乐"
+            if skipped:
+                text += f"，跳过 {len(skipped)} 个重名或失败文件"
+            self.say(text, 6, "happy")
+        else:
+            self.say("没有导入新音乐" + (f"：{skipped[0]}" if skipped else ""),
+                     6, "sad")
+
+    def delete_music(self):
+        track = self.music.current()
+        if not track:
+            self.say("当前没有可删除的音乐", 4)
+            return
+        if not messagebox.askyesno(
+                "删除音乐",
+                f"删除《{track.name}》？\n文件将从音乐文件夹移除。",
+                parent=self.root):
+            return
+        self.music.close()
+        try:
+            track.unlink()
+        except OSError as e:
+            self.say(f"删除失败：{e}", 6, "sad")
+            return
+        self.music.rescan()
+        self.say(f"已删除 {track.name}", 4)
+
     def open_music_folder(self):
         try:
+            MUSIC_DIR.mkdir(parents=True, exist_ok=True)
             os.startfile(str(MUSIC_DIR))
         except OSError as e:
             self.say(f"打开失败：{e}", 6, "sad")
@@ -466,7 +529,22 @@ class PetWindow:
             self.anim_job = None
         self.scheduler.stop()
         self.music.close()
+        self._stop_panel()
         self.root.destroy()
+
+    def _stop_panel(self):
+        proc = self.panel_proc
+        self.panel_proc = None
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     # ---------- 气泡与状态 ----------
     def say(self, text: str, seconds: float = 5, state: str | None = None):
@@ -511,7 +589,43 @@ class PetWindow:
                          "sad" if kind == "err" else "happy")
         except queue.Empty:
             pass
+        self.check_schedule()
         self.root.after(200, self.poll)
+
+    def check_schedule(self):
+        """每分钟检查本周计划：开始前提醒一次，到点再提醒一次。"""
+        moment = time.time()
+        if moment - self.schedule_check < 60:
+            return
+        self.schedule_check = moment
+        now = datetime.now()
+        prefix = f"{now:%Y-%m-%d}:"
+        self.notified = {key for key in self.notified if key.startswith(prefix)}
+        try:
+            entries = schedule.day_entries(self.cfg, now.weekday())
+        except Exception:
+            return
+        minutes = now.hour * 60 + now.minute
+        soon, due = [], []
+        for entry in entries:
+            base = f"{prefix}{entry['task_id']}"
+            label = f"{entry['start_text']} {entry['title']}"
+            note = f"（{entry['text']}）" if entry["text"] else ""
+            if (entry["start"] - schedule.LEAD_MINUTES <= minutes < entry["start"]
+                    and f"{base}:soon" not in self.notified):
+                self.notified.add(f"{base}:soon")
+                soon.append(label + note)
+            if (entry["start"] <= minutes < entry["end"]
+                    and f"{base}:due" not in self.notified):
+                self.notified.add(f"{base}:due")
+                due.append(label + note)
+        if soon or due:
+            parts = []
+            if soon:
+                parts.append("快到了：" + "、".join(soon))
+            if due:
+                parts.append("到时间了：" + "、".join(due))
+            self.say("任务提醒 · " + "；".join(parts), 20)
 
     # ---------- 动画 ----------
     def tick(self):

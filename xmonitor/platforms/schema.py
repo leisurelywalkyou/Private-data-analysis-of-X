@@ -54,7 +54,7 @@ def parse_count(value: Any) -> int | None:
 
 
 def parse_time(value: Any) -> str | None:
-    """支持 Unix 秒/毫秒、ISO、RFC 822 与常见微博相对时间，统一为 UTC ISO。"""
+    """支持 Unix 秒/毫秒、ISO、RFC 822 与常见相对时间，统一为 UTC ISO。"""
     if value is None or value == "":
         return None
     if isinstance(value, (int, float)):

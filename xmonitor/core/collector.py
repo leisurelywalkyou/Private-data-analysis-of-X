@@ -1,4 +1,4 @@
-"""通用采集器：适配器取数 → 校验 → 过滤 → 入库，六平台共用。"""
+"""通用采集器：适配器取数 → 校验 → 过滤 → 入库，三平台共用。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from .store import PlatformStore
 # 首次请求页面时会下发附加 Cookie 的站点入口
 HOME_URLS = {
     "x": "https://x.com/",
-    "tiktok": "https://www.tiktok.com/",
 }
 # 进程内缓存：按（平台, 锚点）缓存，避免旧会话的附加 Cookie 串用
 _EXTRA_CACHE: dict[str, dict[str, str]] = {}

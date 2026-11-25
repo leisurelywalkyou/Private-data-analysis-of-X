@@ -14,14 +14,14 @@ PAPER_2 = "#fbf7ec"      # 抬升表面
 PAPER_3 = "#eae2d1"      # 悬停 / 斑马纹
 PAPER_4 = "#f7f2e6"      # 表格偶数行
 INK = "#1e1b16"          # 主文字
-INK_SOFT = "#4a4337"
-MUTED = "#8a8071"
-HAIRLINE = "#dcd2bd"
-HAIRLINE_SOFT = "#e7dfcc"
+INK_SOFT = "#453f34"
+MUTED = "#6f6555"
+HAIRLINE = "#d5cab4"
+HAIRLINE_SOFT = "#e2dac8"
 VERMILION = "#b3402a"    # 主强调
 VERMILION_DARK = "#8d3120"
 TEAL = "#2f6159"
-GOLD = "#a98a4b"
+GOLD = "#9a7d42"
 UP = "#a5372a"
 DOWN = "#2f6159"
 WHITE = "#ffffff"
@@ -33,19 +33,19 @@ KEY = "#ff00ff"
 FAMILY = "Microsoft YaHei UI"
 MONO = "Consolas"
 
-FONT = (FAMILY, 9)
-FONT_BOLD = (FAMILY, 9, "bold")
-FONT_MEDIUM = (FAMILY, 10, "bold")
-FONT_TITLE = (FAMILY, 16, "bold")
-FONT_DISPLAY = (FAMILY, 19, "bold")
-FONT_SMALL = (FAMILY, 8)
-FONT_BODY = (FAMILY, 9)
-FONT_MONO_SMALL = (FAMILY, 9)
-FONT_NUM = (FAMILY, 15, "bold")
-FONT_NUM_BIG = (FAMILY, 18, "bold")
-FONT_NUM_MID = (FAMILY, 13, "bold")
-FONT_EYEBROW = (MONO, 8)
-FONT_LABEL = (FAMILY, 8)
+FONT = (FAMILY, 10)
+FONT_BOLD = (FAMILY, 10, "bold")
+FONT_MEDIUM = (FAMILY, 11, "bold")
+FONT_TITLE = (FAMILY, 17, "bold")
+FONT_DISPLAY = (FAMILY, 20, "bold")
+FONT_SMALL = (FAMILY, 9)
+FONT_BODY = (FAMILY, 10)
+FONT_MONO_SMALL = (FAMILY, 10)
+FONT_NUM = (FAMILY, 16, "bold")
+FONT_NUM_BIG = (FAMILY, 19, "bold")
+FONT_NUM_MID = (FAMILY, 14, "bold")
+FONT_EYEBROW = (MONO, 9)
+FONT_LABEL = (FAMILY, 9)
 
 
 def apply_style(root) -> None:
@@ -72,7 +72,7 @@ def apply_style(root) -> None:
 
     style.configure("TButton", background=PAPER_2, foreground=INK, font=FONT_BOLD,
                     bordercolor=HAIRLINE, lightcolor=PAPER_2, darkcolor=PAPER_2,
-                    padding=(12, 6), relief="flat", borderwidth=1)
+                    padding=(13, 7), relief="flat", borderwidth=1)
     style.map("TButton",
               background=[("active", PAPER_3), ("disabled", PAPER_2)],
               foreground=[("active", VERMILION), ("disabled", MUTED)],
@@ -107,9 +107,9 @@ def apply_style(root) -> None:
                     bordercolor=HAIRLINE, lightcolor=PAPER_2, darkcolor=PAPER_2)
 
     style.configure("Treeview", background=PAPER_2, fieldbackground=PAPER_2,
-                    foreground=INK, rowheight=32, borderwidth=0, font=FONT)
+                    foreground=INK, rowheight=34, borderwidth=0, font=FONT)
     style.configure("Treeview.Heading", background=PAPER, foreground=MUTED,
-                    relief="flat", borderwidth=0, font=FONT_EYEBROW, padding=(4, 6))
+                    relief="flat", borderwidth=0, font=FONT_EYEBROW, padding=(5, 7))
     style.map("Treeview.Heading", background=[("active", PAPER_3)])
     style.map("Treeview", background=[("selected", PAPER_3)],
               foreground=[("selected", INK)])
@@ -120,10 +120,20 @@ def apply_style(root) -> None:
     style.map("Vertical.TScrollbar", background=[("active", HAIRLINE)])
 
     style.configure("TNotebook", background=PAPER, borderwidth=0, tabmargins=0)
-    style.configure("TNotebook.Tab", background=PAPER, foreground=MUTED, padding=(14, 7),
+    style.configure("TNotebook.Tab", background=PAPER, foreground=MUTED, padding=(14, 8),
                     font=FONT_BOLD)
     style.map("TNotebook.Tab", background=[("selected", PAPER_2)],
               foreground=[("selected", VERMILION)])
+
+
+def center_window(win, width: int | None = None, height: int | None = None) -> None:
+    """把弹窗初始位置设为主屏幕中央，可选固定宽高。"""
+    win.update_idletasks()
+    w = width or max(win.winfo_width(), win.winfo_reqwidth())
+    h = height or max(win.winfo_height(), win.winfo_reqheight())
+    x = max(0, (win.winfo_screenwidth() - w) // 2)
+    y = max(0, (win.winfo_screenheight() - h) // 2)
+    win.geometry(f"{w}x{h}+{x}+{y}")
 
 
 # ---------- 小控件 ----------

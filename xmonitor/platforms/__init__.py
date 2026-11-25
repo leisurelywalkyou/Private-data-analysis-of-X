@@ -10,7 +10,7 @@ from .base import PlatformAdapter
 
 RESERVED = {"__init__", "base", "schema", "browser_session", "xhs_browser",
             "__pycache__"}
-ORDER = ("x", "instagram", "xiaohongshu", "weibo", "pixiv", "tiktok")
+ORDER = ("x", "xiaohongshu", "pixiv")
 _CACHE: dict[str, type[PlatformAdapter]] = {}
 
 
@@ -57,12 +57,12 @@ def session_cookie_name(platform: str) -> str:
 
 
 def extra_cookie_names(platform: str) -> tuple[str, ...]:
-    """锚点之外由程序自动获取的必需 Cookie（X 的 ct0、TikTok 的 tt_chain_token）。"""
+    """锚点之外由程序自动获取的必需 Cookie（X 的 ct0）。"""
     return tuple(getattr(load(platform), "extra_cookies", ()) or ())
 
 
 def user_id_required(platform: str) -> bool:
-    """只有小红书、微博、pixiv 必须在设置里填写平台用户 ID。"""
+    """只有小红书、pixiv 必须在设置里填写平台用户 ID。"""
     return bool(getattr(load(platform), "user_id_required", False))
 
 
